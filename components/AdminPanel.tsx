@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Booking, BookingStatus } from '../types';
 import { EQUIPMENT_LIST, TIME_SLOTS } from '../constants';
-import * as db from '../services/db';
+import * as api from '../services/api';
 import { Pencil, X, Calendar as CalendarIcon, Lock, Trash2 } from 'lucide-react';
 
 interface AdminPanelProps {
     bookings: Booking[];
-    refreshData: () => void;
+    refreshData: () => Promise<void>;
     onLogout: () => void;
 }
 
@@ -16,6 +16,8 @@ const getDayLabel = (date: Date) => date.toLocaleDateString('es-ES', { weekday: 
 const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout }) => {
     const [notificationEmail, setNotificationEmail] = useState('');
     const [notificationStatus, setNotificationStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+    const [blockLoading, setBlockLoading] = useState(false);
+    const [editLoading, setEditLoading] = useState(false);
 
     // State for blocking
     const [blockReason, setBlockReason] = useState('Mantenimiento');
@@ -36,38 +38,51 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
     const pendingBookings = useMemo(() => bookings.filter(b => b.status === 'pending'), [bookings]);
 
     useEffect(() => {
-        const settings = db.getAdminSettings();
-        setNotificationEmail(settings.notificationEmail);
+        (async () => {
+            try {
+                const settings = await api.getAdminSettings();
+                setNotificationEmail(settings.notificationEmail);
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+        })();
     }, []);
 
-    const handleStatusChange = (bookingId: string, newStatus: 'approved' | 'available' | 'blocked') => {
-        if (newStatus === 'available') {
-            db.deleteBooking(bookingId); // Simply remove it if rejected to free up the slot
-        } else {
-            db.updateBookingStatus(bookingId, newStatus);
+    const handleStatusChange = async (bookingId: string, newStatus: 'approved' | 'available' | 'blocked') => {
+        try {
+            if (newStatus === 'available') {
+                await api.deleteBooking(bookingId);
+            } else {
+                await api.updateBookingStatus(bookingId, newStatus);
+            }
+            await refreshData();
+        } catch (error) {
+            alert('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
         }
-        refreshData();
     };
 
-    const handleSendNotifications = () => {
+    const handleSendNotifications = async () => {
         if (!notificationEmail) {
             alert("Por favor ingrese un correo de remitente.");
             return;
         }
 
-        // Save email for next time
-        db.saveAdminSettings({ notificationEmail });
-
         setNotificationStatus('sending');
-        setTimeout(() => {
+        try {
+            // Save email for next time
+            await api.saveAdminSettings({ notificationEmail });
+
             // Mock sending email
             console.log(`Sending notifications from ${notificationEmail} to approved/rejected users...`);
             setNotificationStatus('sent');
             setTimeout(() => setNotificationStatus('idle'), 3000);
-        }, 1500);
+        } catch (error) {
+            alert('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
+            setNotificationStatus('idle');
+        }
     };
 
-    const handleBlockDay = () => {
+    const handleBlockDay = async () => {
         // Validate inputs based on block type
         if (blockType === 'single' && !blockStartDate) {
             alert("Seleccione una fecha");
@@ -86,96 +101,103 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             return;
         }
 
+        setBlockLoading(true);
         const timestamp = Date.now();
         let blockMessage = '';
 
-        // Helper function to get date range
-        const getDateRange = (start: string, end: string): string[] => {
-            const dates: string[] = [];
-            const current = new Date(start);
-            const finalDate = new Date(end);
+        try {
+            // Helper function to get date range
+            const getDateRange = (start: string, end: string): string[] => {
+                const dates: string[] = [];
+                const current = new Date(start);
+                const finalDate = new Date(end);
 
-            while (current <= finalDate) {
-                dates.push(current.toISOString().split('T')[0]);
-                current.setDate(current.getDate() + 1);
+                while (current <= finalDate) {
+                    dates.push(current.toISOString().split('T')[0]);
+                    current.setDate(current.getDate() + 1);
+                }
+                return dates;
+            };
+
+            // Get dates to block
+            let datesToBlock: string[] = [];
+            if (blockType === 'single') {
+                datesToBlock = [blockStartDate];
+                blockMessage = `Se bloqueó el ${new Date(blockStartDate).toLocaleDateString('es-ES')}`;
+            } else if (blockType === 'range') {
+                datesToBlock = getDateRange(blockStartDate, blockEndDate);
+                blockMessage = `Se bloqueó desde ${new Date(blockStartDate).toLocaleDateString('es-ES')} hasta ${new Date(blockEndDate).toLocaleDateString('es-ES')}`;
+            } else if (blockType === 'indefinite') {
+                // For indefinite blocks, create a single "master" block with indefinite flag
+                const id = `indefinite-${blockStartDate}-${blockEquipmentId}-${timestamp}`;
+                try {
+                    await api.addBooking({
+                        id,
+                        date: blockStartDate,
+                        equipmentId: blockEquipmentId === 'all' ? 0 : blockEquipmentId as number,
+                        timeSlotId: 'all',
+                        status: 'blocked',
+                        blockedReason: blockReason,
+                        blockType: 'indefinite',
+                        blockStartDate: blockStartDate,
+                        timestamp
+                    });
+                } catch (e) {
+                    await api.updateBookingStatus(id, 'blocked', {
+                        blockedReason: blockReason,
+                        blockType: 'indefinite',
+                        blockStartDate: blockStartDate
+                    });
+                }
+                blockMessage = `Se bloqueó indefinidamente a partir del ${new Date(blockStartDate).toLocaleDateString('es-ES')} (${blockEquipmentId === 'all' ? 'Todos los equipos' : 'Equipo seleccionado'})`;
             }
-            return dates;
-        };
 
-        // Get dates to block
-        let datesToBlock: string[] = [];
-        if (blockType === 'single') {
-            datesToBlock = [blockStartDate];
-            blockMessage = `Se bloqueó el ${new Date(blockStartDate).toLocaleDateString('es-ES')}`;
-        } else if (blockType === 'range') {
-            datesToBlock = getDateRange(blockStartDate, blockEndDate);
-            blockMessage = `Se bloqueó desde ${new Date(blockStartDate).toLocaleDateString('es-ES')} hasta ${new Date(blockEndDate).toLocaleDateString('es-ES')}`;
-        } else if (blockType === 'indefinite') {
-            // For indefinite blocks, create a single "master" block with indefinite flag
-            const id = `indefinite-${blockStartDate}-${blockEquipmentId}-${timestamp}`;
-            try {
-                db.addBooking({
-                    id,
-                    date: blockStartDate,
-                    equipmentId: blockEquipmentId === 'all' ? 0 : blockEquipmentId as number,
-                    timeSlotId: 'all',
-                    status: 'blocked',
-                    blockedReason: blockReason,
-                    blockType: 'indefinite',
-                    blockStartDate: blockStartDate,
-                    timestamp
-                });
-            } catch (e) {
-                db.updateBookingStatus(id, 'blocked', {
-                    blockedReason: blockReason,
-                    blockType: 'indefinite',
-                    blockStartDate: blockStartDate
-                });
-            }
-            blockMessage = `Se bloqueó indefinidamente a partir del ${new Date(blockStartDate).toLocaleDateString('es-ES')} (${blockEquipmentId === 'all' ? 'Todos los equipos' : 'Equipo seleccionado'})`;
-        }
-
-        // Apply blocking for single and range blocks
-        if (blockType === 'single' || blockType === 'range') {
-            datesToBlock.forEach(dateStr => {
-                TIME_SLOTS.forEach(slot => {
-                    EQUIPMENT_LIST.forEach(eq => {
-                        if (blockEquipmentId === 'all' || blockEquipmentId === eq.id) {
-                            const id = `${dateStr}-${eq.id}-${slot.id}`;
-                            try {
-                                db.addBooking({
-                                    id,
-                                    date: dateStr,
-                                    equipmentId: eq.id,
-                                    timeSlotId: slot.id,
-                                    status: 'blocked',
-                                    blockedReason: blockReason,
-                                    blockType: blockType === 'single' ? 'single' : 'range',
-                                    blockStartDate,
-                                    blockEndDate: blockType === 'range' ? blockEndDate : undefined,
-                                    timestamp
-                                });
-                            } catch (e) {
-                                db.updateBookingStatus(id, 'blocked', {
-                                    blockedReason: blockReason,
-                                    blockType: blockType === 'single' ? 'single' : 'range',
-                                    blockStartDate,
-                                    blockEndDate: blockType === 'range' ? blockEndDate : undefined
-                                });
+            // Apply blocking for single and range blocks
+            if (blockType === 'single' || blockType === 'range') {
+                for (const dateStr of datesToBlock) {
+                    for (const slot of TIME_SLOTS) {
+                        for (const eq of EQUIPMENT_LIST) {
+                            if (blockEquipmentId === 'all' || blockEquipmentId === eq.id) {
+                                const id = `${dateStr}-${eq.id}-${slot.id}`;
+                                try {
+                                    await api.addBooking({
+                                        id,
+                                        date: dateStr,
+                                        equipmentId: eq.id,
+                                        timeSlotId: slot.id,
+                                        status: 'blocked',
+                                        blockedReason: blockReason,
+                                        blockType: blockType === 'single' ? 'single' : 'range',
+                                        blockStartDate,
+                                        blockEndDate: blockType === 'range' ? blockEndDate : undefined,
+                                        timestamp
+                                    });
+                                } catch (e) {
+                                    await api.updateBookingStatus(id, 'blocked', {
+                                        blockedReason: blockReason,
+                                        blockType: blockType === 'single' ? 'single' : 'range',
+                                        blockStartDate,
+                                        blockEndDate: blockType === 'range' ? blockEndDate : undefined
+                                    });
+                                }
                             }
                         }
-                    });
-                });
-            });
-        }
+                    }
+                }
+            }
 
-        alert(`${blockMessage}. Razón: ${blockReason}`);
-        // Reset form
-        setBlockStartDate('');
-        setBlockEndDate('');
-        setBlockType('single');
-        setBlockReason('Mantenimiento');
-        refreshData();
+            alert(`${blockMessage}. Razón: ${blockReason}`);
+            // Reset form
+            setBlockStartDate('');
+            setBlockEndDate('');
+            setBlockType('single');
+            setBlockReason('Mantenimiento');
+            await refreshData();
+        } catch (error) {
+            alert('Error al bloquear: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        } finally {
+            setBlockLoading(false);
+        }
     };
 
     // Edit Handlers
@@ -189,7 +211,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         setSwapTargetId('');
     };
 
-    const handleDeleteBooking = (e?: React.MouseEvent) => {
+    const handleDeleteBooking = async (e?: React.MouseEvent) => {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
@@ -202,35 +224,41 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             : `¿Está seguro de eliminar la reserva de ${editingBooking.userName}? Esta acción no se puede deshacer.`;
 
         if (window.confirm(confirmMessage)) {
+            setEditLoading(true);
             try {
-                db.deleteBooking(editingBooking.id);
+                await api.deleteBooking(editingBooking.id);
                 setEditingBooking(null);
-                refreshData();
+                await refreshData();
             } catch (error) {
                 console.error("Error deleting booking:", error);
                 alert("Ocurrió un error al intentar eliminar la reserva.");
+            } finally {
+                setEditLoading(false);
             }
         }
     };
 
-    const handleSaveEdit = () => {
+    const handleSaveEdit = async () => {
         if (!editingBooking) return;
+        setEditLoading(true);
         try {
-            db.updateBookingDetails(editingBooking.id, {
+            const result = await api.updateBookingDetails(editingBooking.id, {
                 date: editForm.date,
                 equipmentId: editForm.equipmentId,
                 timeSlotId: editForm.timeSlotId
             });
             setEditingBooking(null);
             setSwapTargetId('');
-            refreshData();
+            await refreshData();
             alert("Solicitud modificada con éxito.");
         } catch (e: any) {
             alert("Error al modificar: " + e.message);
+        } finally {
+            setEditLoading(false);
         }
     };
 
-    const handleSwapBookings = () => {
+    const handleSwapBookings = async () => {
         if (!editingBooking) return;
         if (!swapTargetId) {
             alert("Seleccione la segunda reserva para intercambiar.");
@@ -246,14 +274,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         const confirmMessage = `¿Desea intercambiar los turnos de ${editingBooking.userName} con ${target.userName}?`;
         if (!window.confirm(confirmMessage)) return;
 
+        setEditLoading(true);
         try {
-            db.swapBookingSlots(editingBooking.id, swapTargetId);
+            await api.swapBookingSlots(editingBooking.id, swapTargetId);
             setEditingBooking(null);
             setSwapTargetId('');
-            refreshData();
+            await refreshData();
             alert("Intercambio realizado con éxito.");
         } catch (e: any) {
             alert("Error al intercambiar: " + e.message);
+        } finally {
+            setEditLoading(false);
         }
     };
 
@@ -467,9 +498,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                             </div>
                             <button
                                 onClick={handleBlockDay}
-                                className="w-full bg-slate-600 hover:bg-slate-700 text-white py-2 rounded transition text-sm shadow-sm"
+                                disabled={blockLoading}
+                                className="w-full bg-slate-600 hover:bg-slate-700 text-white py-2 rounded transition text-sm shadow-sm disabled:opacity-50"
                             >
-                                Bloquear {blockType === 'indefinite' ? 'Indefinidamente' : 'Horarios'}
+                                {blockLoading ? 'Bloqueando...' : `Bloquear ${blockType === 'indefinite' ? 'Indefinidamente' : 'Horarios'}`}
                             </button>
                         </div>
                     </div>
@@ -687,26 +719,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                 <button
                                     type="button"
                                     onClick={handleDeleteBooking}
-                                    className="text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-2 rounded transition-colors text-sm font-medium flex items-center gap-1"
+                                    disabled={editLoading}
+                                    className="text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-2 rounded transition-colors text-sm font-medium flex items-center gap-1 disabled:opacity-50"
                                 >
                                     <Trash2 className="w-4 h-4" />
-                                    {editingBooking.status === 'blocked' ? 'Desbloquear' : 'Eliminar Reserva'}
+                                    {editLoading ? 'Procesando...' : (editingBooking.status === 'blocked' ? 'Desbloquear' : 'Eliminar Reserva')}
                                 </button>
 
                                 <div className="flex gap-2">
                                     <button
                                         type="button"
                                         onClick={() => setEditingBooking(null)}
-                                        className="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded transition-colors text-sm font-medium"
+                                        disabled={editLoading}
+                                        className="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded transition-colors text-sm font-medium disabled:opacity-50"
                                     >
                                         Cancelar
                                     </button>
                                     <button
                                         type="button"
                                         onClick={handleSaveEdit}
-                                        className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors shadow-sm text-sm font-medium"
+                                        disabled={editLoading}
+                                        className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors shadow-sm text-sm font-medium disabled:opacity-50"
                                     >
-                                        Guardar Cambios
+                                        {editLoading ? 'Guardando...' : 'Guardar Cambios'}
                                     </button>
                                 </div>
                             </div>

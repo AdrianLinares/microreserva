@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { EQUIPMENT_LIST, TIME_SLOTS, ADMIN_CREDENTIALS, MAX_SLOTS_PER_PERSON } from './constants';
-import { generateWeekDays, getBookings, addBooking, deleteBooking } from './services/db';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { EQUIPMENT_LIST, TIME_SLOTS, MAX_SLOTS_PER_PERSON } from './constants';
+import { generateWeekDays, getBookings, addBooking, saveAdminCredentials, clearAdminCredentials, getAdminSettings } from './services/api';
 import { Booking, BookingStatus } from './types';
 import BookingModal from './components/BookingModal';
 import AdminPanel from './components/AdminPanel';
@@ -33,6 +33,8 @@ const App: React.FC = () => {
     const [isAdmin, setIsAdmin] = useState(false);
     const [showAdminLogin, setShowAdminLogin] = useState(false);
     const [bookings, setBookings] = useState<Booking[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [apiError, setApiError] = useState<string | null>(null);
 
     // Week Navigation State
     const [weekOffset, setWeekOffset] = useState(0);
@@ -48,11 +50,30 @@ const App: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [loginUsername, setLoginUsername] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    const [loginError, setLoginError] = useState<string | null>(null);
+    const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
+
+    // Async refresh data helper
+    const refreshData = useCallback(async () => {
+        try {
+            setApiError(null);
+            const data = await getBookings();
+            setBookings(data);
+        } catch (error) {
+            setApiError(error instanceof Error ? error.message : 'Error al cargar datos');
+        }
+    }, []);
 
     // Initial Load
     useEffect(() => {
-        setBookings(getBookings());
-    }, []);
+        (async () => {
+            try {
+                await refreshData();
+            } finally {
+                setIsLoading(false);
+            }
+        })();
+    }, [refreshData]);
 
     // Filtering Equipment
     const visibleEquipment = useMemo(() => {
@@ -120,7 +141,7 @@ const App: React.FC = () => {
         }
     };
 
-    const handleBookingSubmit = (userData: { name: string; email: string; group: string }) => {
+    const handleBookingSubmit = async (userData: { name: string; email: string; group: string }) => {
 
         // Check global limit (History + New Selection)
         // Only count actual user bookings, not blocked slots or system blocks
@@ -160,8 +181,8 @@ const App: React.FC = () => {
         });
 
         try {
-            newBookings.forEach(b => addBooking(b));
-            setBookings(getBookings());
+            await Promise.all(newBookings.map(b => addBooking(b)));
+            await refreshData();
             setSelectedSlots([]);
             setIsModalOpen(false);
             alert("Solicitud enviada con éxito. Esperando aprobación del administrador.");
@@ -170,15 +191,30 @@ const App: React.FC = () => {
         }
     };
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (loginUsername === ADMIN_CREDENTIALS.username && loginPassword === ADMIN_CREDENTIALS.password) {
+        if (!loginUsername || !loginPassword) {
+            setLoginError("Por favor complete todos los campos");
+            return;
+        }
+
+        setIsVerifyingLogin(true);
+        setLoginError(null);
+
+        try {
+            saveAdminCredentials(loginUsername, loginPassword);
+            // Verify credentials by calling getAdminSettings
+            await getAdminSettings();
             setIsAdmin(true);
             setShowAdminLogin(false);
-            // Clear selections when switching to admin
             setSelectedSlots([]);
-        } else {
-            alert("Credenciales incorrectas");
+            setLoginUsername('');
+            setLoginPassword('');
+        } catch (error) {
+            clearAdminCredentials();
+            setLoginError("Credenciales incorrectas");
+        } finally {
+            setIsVerifyingLogin(false);
         }
     };
 
@@ -233,11 +269,17 @@ const App: React.FC = () => {
                 <div className="fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center p-4">
                     <form onSubmit={handleLogin} className="bg-white p-6 rounded shadow-xl w-full max-w-sm animate-fade-in">
                         <h3 className="text-lg font-bold mb-4 text-slate-800">Acceso Administrativo</h3>
+                        {loginError && (
+                            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded">
+                                {loginError}
+                            </div>
+                        )}
                         <input
                             className={loginInputClasses}
                             placeholder="Usuario"
                             value={loginUsername}
                             onChange={e => setLoginUsername(e.target.value)}
+                            disabled={isVerifyingLogin}
                         />
                         <input
                             className={loginInputClasses.replace('mb-3', 'mb-4')}
@@ -245,10 +287,11 @@ const App: React.FC = () => {
                             type="password"
                             value={loginPassword}
                             onChange={e => setLoginPassword(e.target.value)}
+                            disabled={isVerifyingLogin}
                         />
                         <div className="flex justify-between">
-                            <button type="button" onClick={() => setShowAdminLogin(false)} className="text-slate-500 hover:text-slate-700">Cancelar</button>
-                            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition">Ingresar</button>
+                            <button type="button" onClick={() => { setShowAdminLogin(false); setLoginError(null); }} className="text-slate-500 hover:text-slate-700" disabled={isVerifyingLogin}>Cancelar</button>
+                            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition disabled:opacity-50" disabled={isVerifyingLogin}>{isVerifyingLogin ? 'Verificando...' : 'Ingresar'}</button>
                         </div>
                     </form>
                 </div>
@@ -257,13 +300,39 @@ const App: React.FC = () => {
             {/* Main Content */}
             <main className="flex-grow container mx-auto p-4 md:p-6">
 
+                {isLoading ? (
+                    // Loading skeleton
+                    <div className="space-y-4">
+                        <div className="h-20 bg-slate-200 rounded animate-pulse"></div>
+                        <div className="h-96 bg-slate-200 rounded animate-pulse"></div>
+                        <div className="h-96 bg-slate-200 rounded animate-pulse"></div>
+                    </div>
+                ) : apiError ? (
+                    // Error banner
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded shadow-sm flex items-start justify-between">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <p className="font-semibold text-red-800">Error al cargar datos</p>
+                                <p className="text-red-700 text-sm">{apiError}</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => refreshData()}
+                            className="text-red-600 hover:text-red-800 font-semibold text-sm whitespace-nowrap ml-4"
+                        >
+                            Reintentar
+                        </button>
+                    </div>
+                ) : null}
+
                 {isAdmin ? (
                     <AdminPanel
                         bookings={bookings}
-                        refreshData={() => setBookings(getBookings())}
-                        onLogout={() => { setIsAdmin(false); setSelectedSlots([]); }}
+                        refreshData={refreshData}
+                        onLogout={() => { clearAdminCredentials(); setIsAdmin(false); setSelectedSlots([]); }}
                     />
-                ) : (
+                ) : !isLoading && !apiError ? (
                     <div className="space-y-6">
                         {/* Info Bar */}
                         <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded shadow-sm text-sm text-blue-800 flex items-start gap-3">
