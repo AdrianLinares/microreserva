@@ -103,7 +103,7 @@ export async function updateBookingStatus(
         Object.assign(payload, extra);
     }
 
-    await request('/booking', {
+    await request(`/booking?id=${encodeURIComponent(id)}`, {
         method: 'PUT',
         body: JSON.stringify(payload),
         headers: {
