@@ -19,7 +19,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
 
     // State for blocking
     const [blockReason, setBlockReason] = useState('Mantenimiento');
-    const [blockDate, setBlockDate] = useState('');
+    const [blockType, setBlockType] = useState<'single' | 'range' | 'indefinite'>('single');
+    const [blockStartDate, setBlockStartDate] = useState('');
+    const [blockEndDate, setBlockEndDate] = useState('');
     const [blockEquipmentId, setBlockEquipmentId] = useState<number | 'all'>('all');
 
     // State for editing
@@ -66,37 +68,113 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
     };
 
     const handleBlockDay = () => {
-        if (!blockDate) {
+        // Validate inputs based on block type
+        if (blockType === 'single' && !blockStartDate) {
             alert("Seleccione una fecha");
             return;
         }
+        if (blockType === 'range' && (!blockStartDate || !blockEndDate)) {
+            alert("Seleccione fecha de inicio y fin");
+            return;
+        }
+        if (blockType === 'range' && blockStartDate > blockEndDate) {
+            alert("La fecha de inicio debe ser anterior a la fecha de fin");
+            return;
+        }
+        if (blockType === 'indefinite' && !blockStartDate) {
+            alert("Seleccione una fecha de inicio");
+            return;
+        }
 
-        const dateStr = blockDate;
         const timestamp = Date.now();
+        let blockMessage = '';
 
-        // Iterate through slots
-        TIME_SLOTS.forEach(slot => {
-            EQUIPMENT_LIST.forEach(eq => {
-                if (blockEquipmentId === 'all' || blockEquipmentId === eq.id) {
-                    const id = `${dateStr}-${eq.id}-${slot.id}`;
-                    try {
-                        db.addBooking({
-                            id,
-                            date: dateStr,
-                            equipmentId: eq.id,
-                            timeSlotId: slot.id,
-                            status: 'blocked',
-                            blockedReason: blockReason,
-                            timestamp
-                        });
-                    } catch (e) {
-                        db.updateBookingStatus(id, 'blocked', { blockedReason: blockReason });
-                    }
-                }
+        // Helper function to get date range
+        const getDateRange = (start: string, end: string): string[] => {
+            const dates: string[] = [];
+            const current = new Date(start);
+            const finalDate = new Date(end);
+
+            while (current <= finalDate) {
+                dates.push(current.toISOString().split('T')[0]);
+                current.setDate(current.getDate() + 1);
+            }
+            return dates;
+        };
+
+        // Get dates to block
+        let datesToBlock: string[] = [];
+        if (blockType === 'single') {
+            datesToBlock = [blockStartDate];
+            blockMessage = `Se bloqueó el ${new Date(blockStartDate).toLocaleDateString('es-ES')}`;
+        } else if (blockType === 'range') {
+            datesToBlock = getDateRange(blockStartDate, blockEndDate);
+            blockMessage = `Se bloqueó desde ${new Date(blockStartDate).toLocaleDateString('es-ES')} hasta ${new Date(blockEndDate).toLocaleDateString('es-ES')}`;
+        } else if (blockType === 'indefinite') {
+            // For indefinite blocks, create a single "master" block with indefinite flag
+            const id = `indefinite-${blockStartDate}-${blockEquipmentId}-${timestamp}`;
+            try {
+                db.addBooking({
+                    id,
+                    date: blockStartDate,
+                    equipmentId: blockEquipmentId === 'all' ? 0 : blockEquipmentId as number,
+                    timeSlotId: 'all',
+                    status: 'blocked',
+                    blockedReason: blockReason,
+                    blockType: 'indefinite',
+                    blockStartDate: blockStartDate,
+                    timestamp
+                });
+            } catch (e) {
+                db.updateBookingStatus(id, 'blocked', {
+                    blockedReason: blockReason,
+                    blockType: 'indefinite',
+                    blockStartDate: blockStartDate
+                });
+            }
+            blockMessage = `Se bloqueó indefinidamente a partir del ${new Date(blockStartDate).toLocaleDateString('es-ES')} (${blockEquipmentId === 'all' ? 'Todos los equipos' : 'Equipo seleccionado'})`;
+        }
+
+        // Apply blocking for single and range blocks
+        if (blockType === 'single' || blockType === 'range') {
+            datesToBlock.forEach(dateStr => {
+                TIME_SLOTS.forEach(slot => {
+                    EQUIPMENT_LIST.forEach(eq => {
+                        if (blockEquipmentId === 'all' || blockEquipmentId === eq.id) {
+                            const id = `${dateStr}-${eq.id}-${slot.id}`;
+                            try {
+                                db.addBooking({
+                                    id,
+                                    date: dateStr,
+                                    equipmentId: eq.id,
+                                    timeSlotId: slot.id,
+                                    status: 'blocked',
+                                    blockedReason: blockReason,
+                                    blockType: blockType === 'single' ? 'single' : 'range',
+                                    blockStartDate,
+                                    blockEndDate: blockType === 'range' ? blockEndDate : undefined,
+                                    timestamp
+                                });
+                            } catch (e) {
+                                db.updateBookingStatus(id, 'blocked', {
+                                    blockedReason: blockReason,
+                                    blockType: blockType === 'single' ? 'single' : 'range',
+                                    blockStartDate,
+                                    blockEndDate: blockType === 'range' ? blockEndDate : undefined
+                                });
+                            }
+                        }
+                    });
+                });
             });
-        });
+        }
 
-        alert(`Se bloquearon turnos para la fecha ${dateStr}`);
+        alert(`${blockMessage}. Razón: ${blockReason}`);
+        // Reset form
+        setBlockStartDate('');
+        setBlockEndDate('');
+        setBlockType('single');
+        setBlockReason('Mantenimiento');
         refreshData();
     };
 
@@ -190,6 +268,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
 
     const getBookingForSlot = (eqId: number, timeId: string, date: string) => {
         return bookingMap.get(`${date}-${eqId}-${timeId}`);
+    };
+
+    // Check if equipment is blocked indefinitely for a given date
+    const getIndefiniteBlockForSlot = (eqId: number, date: string) => {
+        return bookings.find(b =>
+            b.blockType === 'indefinite' &&
+            b.status === 'blocked' &&
+            (b.equipmentId === 0 || b.equipmentId === eqId) &&
+            date >= (b.blockStartDate || '')
+        );
     };
 
     const getCellColor = (status: BookingStatus | undefined) => {
@@ -308,17 +396,62 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                     value={blockReason}
                                     onChange={e => setBlockReason(e.target.value)}
                                     className={inputClasses}
+                                    placeholder="Ej: Mantenimiento, Calibración, Reparación"
                                 />
                             </div>
+
                             <div>
-                                <label className="block text-sm mb-1 text-slate-600">Fecha</label>
-                                <input
-                                    type="date"
-                                    value={blockDate}
-                                    onChange={e => setBlockDate(e.target.value)}
+                                <label className="block text-sm mb-1 text-slate-600">Tipo de Bloqueo</label>
+                                <select
+                                    value={blockType}
+                                    onChange={e => {
+                                        setBlockType(e.target.value as 'single' | 'range' | 'indefinite');
+                                        setBlockStartDate('');
+                                        setBlockEndDate('');
+                                    }}
                                     className={inputClasses}
-                                />
+                                >
+                                    <option value="single">Un solo día</option>
+                                    <option value="range">Rango de fechas</option>
+                                    <option value="indefinite">Indefinido (hasta desbloquear manualmente)</option>
+                                </select>
                             </div>
+
+                            {(blockType === 'single' || blockType === 'range' || blockType === 'indefinite') && (
+                                <div>
+                                    <label className="block text-sm mb-1 text-slate-600">
+                                        {blockType === 'indefinite' ? 'Fecha de Inicio' : 'Fecha'}
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={blockStartDate}
+                                        onChange={e => setBlockStartDate(e.target.value)}
+                                        className={inputClasses}
+                                    />
+                                </div>
+                            )}
+
+                            {blockType === 'range' && (
+                                <div>
+                                    <label className="block text-sm mb-1 text-slate-600">Fecha de Fin</label>
+                                    <input
+                                        type="date"
+                                        value={blockEndDate}
+                                        onChange={e => setBlockEndDate(e.target.value)}
+                                        className={inputClasses}
+                                        min={blockStartDate}
+                                    />
+                                </div>
+                            )}
+
+                            {blockType === 'indefinite' && (
+                                <div className="bg-amber-50 border border-amber-200 rounded p-3">
+                                    <p className="text-sm text-amber-700">
+                                        <strong>⚠️ Bloqueo Indefinido:</strong> El equipo será bloqueado a partir de la fecha de inicio hasta que se desbloquee manualmente desde el panel de administración.
+                                    </p>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-sm mb-1 text-slate-600">Equipo(s)</label>
                                 <select
@@ -336,7 +469,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                 onClick={handleBlockDay}
                                 className="w-full bg-slate-600 hover:bg-slate-700 text-white py-2 rounded transition text-sm shadow-sm"
                             >
-                                Bloquear Horarios
+                                Bloquear {blockType === 'indefinite' ? 'Indefinidamente' : 'Horarios'}
                             </button>
                         </div>
                     </div>
@@ -413,26 +546,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                                         </td>
                                                         {EQUIPMENT_LIST.map(eq => {
                                                             const booking = getBookingForSlot(eq.id, slot.id, dayStr);
-                                                            const status = booking ? booking.status : 'available';
+                                                            const indefiniteBlock = getIndefiniteBlockForSlot(eq.id, dayStr);
+                                                            const displayBooking = indefiniteBlock || booking;
+                                                            const status = indefiniteBlock ? 'blocked' : (booking ? booking.status : 'available');
 
                                                             return (
                                                                 <td
                                                                     key={eq.id}
-                                                                    className={`${rowClasses} ${getCellColor(status)} ${booking ? 'cursor-pointer' : ''}`}
-                                                                    onClick={() => booking && handleEditClick(booking)}
-                                                                    title={booking ? 'Haz clic para gestionar' : 'Disponible'}
+                                                                    className={`${rowClasses} ${getCellColor(status)} ${displayBooking ? 'cursor-pointer' : ''}`}
+                                                                    onClick={() => displayBooking && handleEditClick(displayBooking)}
+                                                                    title={displayBooking ? 'Haz clic para gestionar' : 'Disponible'}
                                                                 >
                                                                     <div className="h-full flex flex-col justify-center text-[10px]">
-                                                                        {booking ? (
+                                                                        {displayBooking ? (
                                                                             status === 'blocked' ? (
                                                                                 <div className="flex flex-col items-center opacity-60">
                                                                                     <Lock className="w-3 h-3 mb-0.5" />
-                                                                                    <span className="text-center leading-tight text-[9px]">{booking.blockedReason || 'Bloqueado'}</span>
+                                                                                    <span className="text-center leading-tight text-[9px]">{displayBooking.blockedReason || 'Bloqueado'}</span>
+                                                                                    {indefiniteBlock && <span className="text-center leading-tight text-[8px] mt-0.5">Indefinido</span>}
                                                                                 </div>
                                                                             ) : (
                                                                                 <div className="px-1">
-                                                                                    <span className="font-bold block truncate">{booking.userName || 'Usuario'}</span>
-                                                                                    <span className="block truncate opacity-80 text-[9px]">{booking.userGroup}</span>
+                                                                                    <span className="font-bold block truncate">{displayBooking.userName || 'Usuario'}</span>
+                                                                                    <span className="block truncate opacity-80 text-[9px]">{displayBooking.userGroup}</span>
                                                                                 </div>
                                                                             )
                                                                         ) : (
@@ -538,8 +674,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                         onClick={handleSwapBookings}
                                         disabled={!swapTargetId}
                                         className={`mt-3 w-full py-2 rounded text-sm font-medium transition-colors ${swapTargetId
-                                                ? 'bg-amber-500 text-white hover:bg-amber-600'
-                                                : 'bg-amber-200 text-white cursor-not-allowed'
+                                            ? 'bg-amber-500 text-white hover:bg-amber-600'
+                                            : 'bg-amber-200 text-white cursor-not-allowed'
                                             }`}
                                     >
                                         Intercambiar Turnos

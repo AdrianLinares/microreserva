@@ -21,14 +21,18 @@ export interface Booking {
   date: string; // ISO Date string (YYYY-MM-DD)
   timeSlotId: string;
   status: BookingStatus;
-  
+
   // User Data
   userName?: string;
   userEmail?: string;
   userGroup?: string;
-  
-  // Admin Data
+
+  // Admin Data - Bloqueo
   blockedReason?: string;
+  blockType?: 'single' | 'range' | 'indefinite'; // single date, date range, or indefinite
+  blockStartDate?: string; // For range and indefinite blocks
+  blockEndDate?: string; // For range blocks only
+
   timestamp: number;
 }
 

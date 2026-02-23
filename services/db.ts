@@ -161,3 +161,20 @@ export const generateWeekDays = (weekOffset: number = 0): Date[] => {
   }
   return days;
 }
+
+// Check if equipment is blocked indefinitely starting from a specific date
+export const isEquipmentBlockedIndefinitely = (equipmentId: number, date: string) => {
+  const bookings = getBookings();
+  const indefiniteBlocks = bookings.filter(b =>
+    b.blockType === 'indefinite' &&
+    b.status === 'blocked' &&
+    (b.equipmentId === 0 || b.equipmentId === equipmentId) // 0 means all equipment
+  );
+
+  // Check if any indefinite block applies to this date
+  return indefiniteBlocks.some(block => {
+    if (!block.blockStartDate) return false;
+    // Block applies if the requested date is on or after the block start date
+    return date >= block.blockStartDate;
+  });
+};
