@@ -33,7 +33,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
 
     // State for Calendar Preview
     const [weekOffset, setWeekOffset] = useState(0);
-    const weekDays = useMemo(() => db.generateWeekDays(weekOffset), [weekOffset]);
+    const weekDays = useMemo(() => api.generateWeekDays(weekOffset), [weekOffset]);
 
     const pendingBookings = useMemo(() => bookings.filter(b => b.status === 'pending'), [bookings]);
 

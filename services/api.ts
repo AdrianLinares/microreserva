@@ -1,6 +1,6 @@
 import { Booking, BookingStatus } from '../types';
 
-const API_URL = import.meta.env.VITE_API_URL || '/.netlify/functions';
+const API_URL = (import.meta as any).env.VITE_API_URL || '/.netlify/functions';
 const ADMIN_TOKEN_KEY = 'petro_admin_token';
 
 /**
@@ -38,9 +38,8 @@ async function request<T>(
 ): Promise<T> {
     const url = `${API_URL}${path}`;
 
-    const headers: HeadersInit = {
+    const headers: any = {
         'Content-Type': 'application/json',
-        ...options.headers,
     };
 
     if (requireAuth) {
