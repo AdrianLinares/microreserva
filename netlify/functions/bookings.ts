@@ -1,5 +1,6 @@
 import { Handler } from '@netlify/functions';
-import { sql } from '@neondatabase/serverless';
+import * as Neon from '@neondatabase/serverless';
+const sql: any = (Neon as any).sql ?? (Neon as any).default?.sql;
 
 const MAX_SLOTS_PER_PERSON = 6;
 const RATE_LIMIT_WINDOW_MS = 3600000; // 1 hour

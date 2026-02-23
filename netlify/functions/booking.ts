@@ -1,6 +1,7 @@
 import { Handler } from '@netlify/functions';
-import { sql } from '@neondatabase/serverless';
+import * as Neon from '@neondatabase/serverless';
 import { verifyAdminAuth } from './lib/auth';
+const sql: any = (Neon as any).sql ?? (Neon as any).default?.sql;
 
 interface UpdateStatusPayload {
     status: string;
