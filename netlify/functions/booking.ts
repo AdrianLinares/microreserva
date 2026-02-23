@@ -46,7 +46,6 @@ const handler: Handler = async (event, context) => {
             };
         }
 
-        const db = sql(process.env.DATABASE_URL);
         const bookingId = event.queryStringParameters?.id;
 
         if (!bookingId) {
@@ -73,7 +72,7 @@ const handler: Handler = async (event, context) => {
                 // Update status only
                 const statusPayload = body as UpdateStatusPayload;
 
-                await db`UPDATE bookings SET status = ${statusPayload.status} WHERE id = ${bookingId}`;
+                await sql`UPDATE bookings SET status = ${statusPayload.status} WHERE id = ${bookingId}`;
 
                 return {
                     statusCode: 200,
@@ -90,7 +89,7 @@ const handler: Handler = async (event, context) => {
                 // Check if new ID already exists (collision check)
                 if (newId !== bookingId) {
                     const collision =
-                        await db`SELECT * FROM bookings WHERE id = ${newId}`;
+                        await sql`SELECT * FROM bookings WHERE id = ${newId}`;
 
                     if (collision.length > 0) {
                         return {
@@ -101,7 +100,7 @@ const handler: Handler = async (event, context) => {
                     }
 
                     // Update the booking with new slot details and new ID
-                    await db`UPDATE bookings 
+                    await sql`UPDATE bookings 
             SET id = ${newId}, 
                 date = ${detailsPayload.date}, 
                 equipment_id = ${detailsPayload.equipmentId}, 
@@ -109,7 +108,7 @@ const handler: Handler = async (event, context) => {
             WHERE id = ${bookingId}`;
                 } else {
                     // ID didn't change, but update the fields anyway
-                    await db`UPDATE bookings 
+                    await sql`UPDATE bookings 
             SET date = ${detailsPayload.date}, 
                 equipment_id = ${detailsPayload.equipmentId}, 
                 time_slot_id = ${detailsPayload.timeSlotId}
@@ -131,7 +130,7 @@ const handler: Handler = async (event, context) => {
         }
 
         if (event.httpMethod === 'DELETE') {
-            await db`DELETE FROM bookings WHERE id = ${bookingId}`;
+            await sql`DELETE FROM bookings WHERE id = ${bookingId}`;
 
             return {
                 statusCode: 200,

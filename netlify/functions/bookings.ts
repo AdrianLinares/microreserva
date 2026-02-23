@@ -95,11 +95,9 @@ const handler: Handler = async (event, context) => {
     }
 
     try {
-        const db = sql(process.env.DATABASE_URL);
-
         if (event.httpMethod === 'GET') {
             // GET /bookings - Return all bookings
-            const result = await db`SELECT * FROM bookings ORDER BY created_at DESC`;
+            const result = await sql`SELECT * FROM bookings ORDER BY created_at DESC`;
             const bookings = result.map((row) => snakeToCamel(row as DbBooking));
 
             return {
@@ -132,7 +130,7 @@ const handler: Handler = async (event, context) => {
 
             // Check if slot is already occupied
             const existingBooking =
-                await db`SELECT * FROM bookings WHERE equipment_id = ${booking.equipmentId} AND date = ${booking.date} AND time_slot_id = ${booking.timeSlotId} AND status != 'available'`;
+                await sql`SELECT * FROM bookings WHERE equipment_id = ${booking.equipmentId} AND date = ${booking.date} AND time_slot_id = ${booking.timeSlotId} AND status != 'available'`;
 
             if (existingBooking.length > 0) {
                 return {
@@ -145,65 +143,56 @@ const handler: Handler = async (event, context) => {
             // Enforce MAX_SLOTS_PER_PERSON for pending bookings
             if (booking.status === 'pending' && booking.userEmail) {
                 const activeBookings =
-                    await db`SELECT COUNT(*) as count FROM bookings WHERE user_email = ${booking.userEmail} AND status IN ('pending', 'approved')`;
-
-                const activeCount = parseInt(activeBookings[0].count as string, 10);
-                if (activeCount >= MAX_SLOTS_PER_PERSON) {
-                    return {
-                        statusCode: 429,
-                        headers: getCorsHeaders(),
-                        body: JSON.stringify({
-                            error: `Límite excedido. Ya tienes ${activeCount} turnos activos. El máximo es ${MAX_SLOTS_PER_PERSON}.`,
-                        }),
-                    };
-                }
+                    await sql`SELECT COUNT(*) as count FROM bookings WHERE user_email = ${booking.userEmail} AND status IN ('pending', 'approved')`;
+                return {
+                    statusCode: 429,
+                    headers: getCorsHeaders(),
+                    body: JSON.stringify({
+                        error: `Límite excedido. Ya tienes ${activeCount} turnos activos. El máximo es ${MAX_SLOTS_PER_PERSON}.`,
+                    }),
+                };
             }
-
-            // Rate limiting: max 20 inserts per email in last 1 hour
-            if (booking.userEmail && booking.status === 'pending') {
-                const oneHourAgo = Date.now() - RATE_LIMIT_WINDOW_MS;
-                const recentInserts =
-                    await db`SELECT COUNT(*) as count FROM bookings WHERE user_email = ${booking.userEmail} AND timestamp > ${oneHourAgo}`;
-
-                const recentCount = parseInt(recentInserts[0].count as string, 10);
-                if (recentCount >= RATE_LIMIT_MAX_INSERTS) {
-                    return {
-                        statusCode: 429,
-                        headers: getCorsHeaders(),
-                        body: JSON.stringify({
-                            error: 'Demasiadas solicitudes en la última hora. Intente más tarde.',
-                        }),
-                    };
-                }
-            }
-
-            // Insert booking
-            const snake = camelToSnake(booking);
-            await db`
-        INSERT INTO bookings (id, equipment_id, date, time_slot_id, status, user_name, user_email, user_group, blocked_reason, block_type, block_start_date, block_end_date, timestamp)
-        VALUES (${snake.id}, ${snake.equipment_id}, ${snake.date}, ${snake.time_slot_id}, ${snake.status}, ${snake.user_name}, ${snake.user_email}, ${snake.user_group}, ${snake.blocked_reason}, ${snake.block_type}, ${snake.block_start_date}, ${snake.block_end_date}, ${snake.timestamp})
-      `;
-
-            return {
-                statusCode: 201,
-                headers: getCorsHeaders(),
-                body: JSON.stringify({ success: true }),
-            };
         }
 
-        return {
-            statusCode: 405,
-            headers: getCorsHeaders(),
-            body: JSON.stringify({ error: 'Method not allowed' }),
-        };
-    } catch (error) {
-        console.error('Error:', error);
-        return {
-            statusCode: 500,
-            headers: getCorsHeaders(),
-            body: JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
-        };
+        // Rate limiting: max 20 inserts per email in last 1 hour
+        if (booking.userEmail && booking.status === 'pending') {
+            const oneHourAgo = Date.now() - RATE_LIMIT_WINDOW_MS;
+            const recentInserts =
+                await sql`SELECT COUNT(*) as count FROM bookings WHERE user_email = ${booking.userEmail} AND timestamp > ${oneHourAgo}`;
+            statusCode: 429,
+                headers: getCorsHeaders(),
+                    body: JSON.stringify({
+                        error: 'Demasiadas solicitudes en la última hora. Intente más tarde.',
+                    }),
+                    };
     }
+            }
+
+// Insert booking
+const snake = camelToSnake(booking);
+await sql`
+      `;
+
+return {
+    statusCode: 201,
+    headers: getCorsHeaders(),
+    body: JSON.stringify({ success: true }),
+};
+        }
+
+return {
+    statusCode: 405,
+    headers: getCorsHeaders(),
+    body: JSON.stringify({ error: 'Method not allowed' }),
+};
+    } catch (error) {
+    console.error('Error:', error);
+    return {
+        statusCode: 500,
+        headers: getCorsHeaders(),
+        body: JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
+    };
+}
 };
 
 export { handler };

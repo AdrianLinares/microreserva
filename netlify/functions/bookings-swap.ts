@@ -76,7 +76,7 @@ const handler: Handler = async (event, context) => {
             };
         }
 
-        const db = sql(process.env.DATABASE_URL);
+        const db = sql;
 
         // Fetch both bookings
         const firstResult = await db`SELECT * FROM bookings WHERE id = ${payload.firstId}`;

@@ -57,8 +57,18 @@ async function request<T>(
     });
 
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `API error: ${response.statusText}`);
+        let errorMessage = `API error: ${response.status} ${response.statusText}`;
+        try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+            // Response body is not JSON, use status message
+            const text = await response.text();
+            if (text) {
+                errorMessage = text.substring(0, 200);
+            }
+        }
+        throw new Error(errorMessage);
     }
 
     return response.json();

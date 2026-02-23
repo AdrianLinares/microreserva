@@ -40,7 +40,7 @@ const handler: Handler = async (event, context) => {
             };
         }
 
-        const db = sql(process.env.DATABASE_URL);
+        const db = sql;
 
         if (event.httpMethod === 'GET') {
             // GET /settings - Return notification email
