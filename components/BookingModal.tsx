@@ -9,12 +9,12 @@ interface BookingModalProps {
   sampleEquipment?: Equipment; // Just for display context
 }
 
-const BookingModal: React.FC<BookingModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  onSubmit, 
+const BookingModal: React.FC<BookingModalProps> = ({
+  isOpen,
+  onClose,
+  onSubmit,
   selectedCount,
-  sampleEquipment 
+  sampleEquipment
 }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -22,6 +22,15 @@ const BookingModal: React.FC<BookingModalProps> = ({
   const [error, setError] = useState('');
 
   if (!isOpen) return null;
+
+  const handleClose = () => {
+    // Reset form when closing
+    setName('');
+    setEmail('');
+    setGroup('');
+    setError('');
+    onClose();
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,8 +42,8 @@ const BookingModal: React.FC<BookingModalProps> = ({
     }
 
     if (!email.includes('@')) {
-        setError('Por favor ingrese un correo electrónico válido.');
-        return;
+      setError('Por favor ingrese un correo electrónico válido.');
+      return;
     }
 
     onSubmit({ name, email, group });
@@ -55,12 +64,12 @@ const BookingModal: React.FC<BookingModalProps> = ({
             Estás solicitando <span className="font-semibold text-blue-600">{selectedCount}</span> turno(s).
           </p>
           {sampleEquipment && (
-             <p className="text-xs text-slate-400 mt-2">
-                Ejemplo de equipo: {sampleEquipment.name} - {sampleEquipment.description}
-             </p>
+            <p className="text-xs text-slate-400 mt-2">
+              Ejemplo de equipo: {sampleEquipment.name} - {sampleEquipment.description}
+            </p>
           )}
         </div>
-        
+
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
             <div className="bg-red-50 text-red-600 p-3 rounded text-sm border border-red-200">
@@ -70,10 +79,12 @@ const BookingModal: React.FC<BookingModalProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Nombre Completo</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className={inputClasses}
               placeholder="Juan Pérez"
+              name="fullname"
+              autoComplete="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -81,10 +92,12 @@ const BookingModal: React.FC<BookingModalProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico</label>
-            <input 
-              type="email" 
+            <input
+              type="email"
               className={inputClasses}
-              placeholder="juan@ejemplo.com"
+              placeholder="juan@sgc.gov.co"
+              name="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -92,25 +105,27 @@ const BookingModal: React.FC<BookingModalProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Grupo de Trabajo</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className={inputClasses}
-              placeholder="Petrología Avanzada"
+              placeholder="Cartografía"
+              name="group"
+              autoComplete="organization"
               value={group}
               onChange={(e) => setGroup(e.target.value)}
             />
           </div>
 
           <div className="flex justify-end gap-3 mt-6">
-            <button 
-              type="button" 
-              onClick={onClose}
+            <button
+              type="button"
+              onClick={handleClose}
               className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded transition-colors"
             >
               Cancelar
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors shadow-sm"
             >
               Solicitar Turno
