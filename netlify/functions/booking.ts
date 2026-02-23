@@ -2,7 +2,11 @@ import { Handler } from '@netlify/functions';
 import { neon } from '@neondatabase/serverless';
 import { verifyAdminAuth } from './lib/auth';
 
-const sql = neon(process.env.DATABASE_URL!);
+if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL environment variable is not set');
+}
+
+const sql = neon(process.env.DATABASE_URL);
 
 interface UpdateStatusPayload {
     status: string;

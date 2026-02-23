@@ -1,7 +1,11 @@
 import { Handler } from '@netlify/functions';
 import { neon } from '@neondatabase/serverless';
 
-const sql = neon(process.env.DATABASE_URL!);
+if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL environment variable is not set');
+}
+
+const sql = neon(process.env.DATABASE_URL);
 
 const MAX_SLOTS_PER_PERSON = 6;
 const RATE_LIMIT_WINDOW_MS = 3600000; // 1 hour
