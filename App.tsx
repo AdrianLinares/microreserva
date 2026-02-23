@@ -334,6 +334,7 @@ const App: React.FC = () => {
                     />
                 ) : !isLoading && !apiError ? (
                     <div className="space-y-6">
+
                         {/* Info Bar */}
                         <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded shadow-sm text-sm text-blue-800 flex items-start gap-3">
                             <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -491,7 +492,7 @@ const App: React.FC = () => {
                             })}
                         </div>
                     </div>
-                )}
+                ) : null}
             </main>
 
             {/* Booking Floating Action Button */}
