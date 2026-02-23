@@ -13,7 +13,6 @@ export default defineConfig(({ mode }) => {
         interval: 200,
       },
     },
-    assetsInclude: ['**/*.html'],
     plugins: [react()],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
