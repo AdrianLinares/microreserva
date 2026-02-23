@@ -1,7 +1,8 @@
 import { Handler } from '@netlify/functions';
-import * as Neon from '@neondatabase/serverless';
+import { neon } from '@neondatabase/serverless';
 import { verifyAdminAuth } from './lib/auth';
-const sql: any = (Neon as any).sql ?? (Neon as any).default?.sql;
+
+const sql = neon(process.env.DATABASE_URL!);
 
 interface SwapPayload {
     firstId: string;
