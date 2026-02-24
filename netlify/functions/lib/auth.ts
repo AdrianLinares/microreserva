@@ -1,5 +1,10 @@
 import { compare } from 'bcryptjs';
 
+interface AdminUser {
+    username: string;
+    passwordHash: string;
+}
+
 /**
  * Verify admin authentication from Authorization header
  * Expected format: Basic <base64(username:password)>
@@ -8,11 +13,10 @@ export async function verifyAdminAuth(authHeader?: string): Promise<boolean> {
     try {
         if (!authHeader) return false;
 
-        const adminUsername = process.env.ADMIN_USERNAME;
-        const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+        const adminUsersJson = process.env.ADMIN_USERS;
 
-        if (!adminUsername || !adminPasswordHash) {
-            console.error('Admin credentials not configured in environment');
+        if (!adminUsersJson) {
+            console.error('Admin users not configured in environment');
             return false;
         }
 
@@ -29,14 +33,31 @@ export async function verifyAdminAuth(authHeader?: string): Promise<boolean> {
             return false;
         }
 
-        // Verify username matches
-        if (username !== adminUsername) {
+        // Parse admin users
+        let adminUsers: AdminUser[];
+        try {
+            adminUsers = JSON.parse(adminUsersJson);
+        } catch (error) {
+            console.error('Invalid ADMIN_USERS JSON format:', error);
             return false;
         }
 
-        // Verify password using timing-safe comparison
-        const isPasswordValid = await compare(password, adminPasswordHash);
-        return isPasswordValid;
+        if (!Array.isArray(adminUsers) || adminUsers.length === 0) {
+            console.error('No admin users configured');
+            return false;
+        }
+
+        // Find user and verify password
+        for (const admin of adminUsers) {
+            if (admin.username === username) {
+                const isPasswordValid = await compare(password, admin.passwordHash);
+                if (isPasswordValid) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     } catch (error) {
         console.error('Auth verification error:', error);
         return false;
