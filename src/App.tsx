@@ -345,6 +345,15 @@ const App: React.FC = () => {
                                         Actualmente fuera de horario para nuevas solicitudes.
                                     </p>
                                 )}
+                                <div className="mt-3 text-blue-900">
+                                    <p className="font-semibold">Instrucciones de uso:</p>
+                                    <ol className="list-decimal list-inside mt-1 space-y-1 text-sm">
+                                        <li>Seleccionar la semana en la que se realizará la solicitud (Esta Semana / Próxima Semana).</li>
+                                        <li>Seleccionar espacio disponible en el calendario.</li>
+                                        <li>Dar clic en “Solicitar Turno(s)” y completar los datos.</li>
+                                        <li>Enviar la solicitud y esperar la aprobación del administrador por correo.</li>
+                                    </ol>
+                                </div>
                             </div>
                         </div>
 
