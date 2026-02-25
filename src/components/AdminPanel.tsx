@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Booking, BookingStatus } from '../types';
 import { EQUIPMENT_LIST, TIME_SLOTS } from '../constants';
 import * as api from '../services/api';
-import { Pencil, X, Calendar as CalendarIcon, Lock, Trash2 } from 'lucide-react';
+import { Pencil, X, Calendar as CalendarIcon, Lock, Trash2, Copy, Check } from 'lucide-react';
 
 interface AdminPanelProps {
     bookings: Booking[];
@@ -16,6 +16,7 @@ const getDayLabel = (date: Date) => date.toLocaleDateString('es-ES', { weekday: 
 const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout }) => {
     const [notificationEmail, setNotificationEmail] = useState('');
     const [notificationStatus, setNotificationStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+    const [emailCopied, setEmailCopied] = useState(false);
     const [blockLoading, setBlockLoading] = useState(false);
     const [editLoading, setEditLoading] = useState(false);
 
@@ -36,6 +37,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
     const weekDays = useMemo(() => api.generateWeekDays(weekOffset), [weekOffset]);
 
     const pendingBookings = useMemo(() => bookings.filter(b => b.status === 'pending'), [bookings]);
+
+    const userEmails = useMemo(() => {
+        const emailSet = new Set<string>();
+        bookings.forEach(b => {
+            if (b.status !== 'blocked' && b.userEmail) {
+                emailSet.add(b.userEmail.trim());
+            }
+        });
+        return Array.from(emailSet).sort();
+    }, [bookings]);
+
+    const emailListForGmail = useMemo(() => userEmails.join(', '), [userEmails]);
 
     useEffect(() => {
         (async () => {
@@ -79,6 +92,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         } catch (error) {
             alert('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
             setNotificationStatus('idle');
+        }
+    };
+
+    const handleCopyEmails = async () => {
+        try {
+            await navigator.clipboard.writeText(emailListForGmail);
+            setEmailCopied(true);
+            setTimeout(() => setEmailCopied(false), 2000);
+        } catch (error) {
+            alert('Error al copiar: ' + (error instanceof Error ? error.message : 'Unknown error'));
         }
     };
 
@@ -392,7 +415,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                 <div className="space-y-8">
 
                     {/* Notifications */}
-                    <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
+                    {/* <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
                         <h3 className="text-lg font-semibold mb-3 text-slate-700">Sistema de Notificaciones</h3>
                         <div className="flex flex-col gap-3">
                             <label className="text-sm text-slate-600">Correo remitente:</label>
@@ -413,6 +436,45 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                 {notificationStatus === 'sending' && 'Enviando...'}
                                 {notificationStatus === 'sent' && '¡Enviado!'}
                             </button>
+                        </div>
+                    </div> */}
+
+                    {/* Email List */}
+                    <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
+                        <h3 className="text-lg font-semibold mb-3 text-slate-700">Lista de Correos</h3>
+                        <div className="space-y-3">
+                            <p className="text-sm text-slate-600">
+                                Correos de solicitantes registrados ({userEmails.length}):
+                            </p>
+                            <div className="bg-white border border-slate-300 rounded p-3 max-h-32 overflow-y-auto">
+                                {userEmails.length > 0 ? (
+                                    <p className="text-xs text-slate-700 font-mono break-all leading-relaxed">
+                                        {emailListForGmail}
+                                    </p>
+                                ) : (
+                                    <p className="text-sm text-slate-400 italic">No hay correos registrados</p>
+                                )}
+                            </div>
+                            <button
+                                onClick={handleCopyEmails}
+                                disabled={userEmails.length === 0}
+                                className={'w-full py-2 rounded text-white transition flex items-center justify-center gap-2 ' + (emailCopied ? 'bg-green-500' : userEmails.length > 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-300 cursor-not-allowed')}
+                            >
+                                {emailCopied ? (
+                                    <>
+                                        <Check className="w-4 h-4" />
+                                        Copiado!
+                                    </>
+                                ) : (
+                                    <>
+                                        <Copy className="w-4 h-4" />
+                                        Copiar para Gmail
+                                    </>
+                                )}
+                            </button>
+                            <p className="text-xs text-slate-500 italic">
+                                Lista optimizada para pegar directamente en el campo Para de Gmail
+                            </p>
                         </div>
                     </div>
 
