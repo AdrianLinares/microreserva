@@ -4,6 +4,7 @@ export interface Equipment {
     description: string;
     type: 'Microscopio' | 'Estereomicroscopio';
     brand: 'ZEISS' | 'OLYMPUS';
+    obj: 'obj 2.5x, 4x, 10x, 20x, 50x, 100x'| 'obj 4x, 10x, 20x, 100x' | 'obj 0.63x, 1x, 1.5x';
     hasCamera: boolean;
 }
 

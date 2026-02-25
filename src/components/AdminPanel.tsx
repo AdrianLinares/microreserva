@@ -204,6 +204,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                     <th style="padding: 4px; font-size: 8.5px; border: 1px solid #999; text-align: center; min-width: 80px;">
                                         <div style="font-weight: bold; line-height: 1.2;">${eq.name}</div>
                                         <div style="font-size: 7px; color: #666; line-height: 1.2;">${eq.brand}</div>
+                                        <div style="font-size: 7px; color: #666; line-height: 1.2;">${eq.obj}</div>
                                     </th>
                                 `).join('')}
                             </tr>
@@ -769,6 +770,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                                     <th key={eq.id} className="min-w-[140px] border-b border-r p-2 text-left bg-slate-50/50">
                                                         <div className="font-bold text-slate-800 text-[11px]">{eq.name}</div>
                                                         <div className="text-[9px] text-slate-500 leading-tight">{eq.brand}</div>
+                                                        <div className="text-[9px] text-slate-500 leading-tight">{eq.obj}</div>
                                                     </th>
                                                 ))}
                                             </tr>
