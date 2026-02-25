@@ -352,6 +352,7 @@ const App: React.FC = () => {
                                         <li>Seleccionar espacio disponible en el calendario.</li>
                                         <li>Dar clic en “Solicitar Turno(s)” y completar los datos.</li>
                                         <li>Enviar la solicitud y esperar la aprobación del administrador por correo.</li>
+                                        <li>En caso de no encontrar disponibilidad contacte a los administradores avrincon y/o jlinares.</li>
                                     </ol>
                                 </div>
                             </div>
