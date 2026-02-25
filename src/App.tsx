@@ -152,8 +152,6 @@ const App: React.FC = () => {
         ).length;
 
         // Debug: Log bookings for this user
-        console.log('User email:', userData.email);
-        console.log('All bookings for user:', bookings.filter(b => b.userEmail === userData.email));
         console.log('Active bookings count:', activeBookingsCount);
 
         if (activeBookingsCount + selectedSlots.length > MAX_SLOTS_PER_PERSON) {
