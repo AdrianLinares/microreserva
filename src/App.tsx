@@ -424,8 +424,8 @@ const App: React.FC = () => {
                                                         {visibleEquipment.map(eq => (
                                                             <th key={eq.id} className="min-w-[160px] border-b border-r p-2 text-left bg-slate-50/50">
                                                                 <div className="font-bold text-slate-800 text-xs">{eq.name}</div>
-                                                                <div className="text-[10px] text-slate-500 leading-tight">{eq.brand}</div>
-                                                                <div className="text-[10px] text-slate-500 leading-tight">{eq.obj}</div>
+                                                                <div className="text-[10px] text-slate-500 leading-tight">{eq.type} - {eq.brand}</div>
+                                                                <div className="text-[9px] text-slate-500 leading-tight">{eq.obj}</div>
                                                             </th>
                                                         ))}
                                                     </tr>
