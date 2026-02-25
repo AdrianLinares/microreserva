@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Booking, BookingStatus } from '../types';
 import { EQUIPMENT_LIST, TIME_SLOTS } from '../constants';
 import * as api from '../services/api';
-import { Pencil, X, Calendar as CalendarIcon, Lock, Trash2, Copy, Check } from 'lucide-react';
+import { Pencil, X, Calendar as CalendarIcon, Lock, Trash2, Copy, Check, Download } from 'lucide-react';
+import html2pdf from 'html2pdf.js';
 
 interface AdminPanelProps {
     bookings: Booking[];
@@ -35,6 +36,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
     // State for Calendar Preview
     const [weekOffset, setWeekOffset] = useState(0);
     const weekDays = useMemo(() => api.generateWeekDays(weekOffset), [weekOffset]);
+    const calendarRef = useRef<HTMLDivElement>(null);
+    const [pdfGenerating, setPdfGenerating] = useState(false);
 
     const pendingBookings = useMemo(() => bookings.filter(b => b.status === 'pending'), [bookings]);
 
@@ -102,6 +105,138 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             setTimeout(() => setEmailCopied(false), 2000);
         } catch (error) {
             alert('Error al copiar: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        }
+    };
+
+    const handleDownloadPDF = async () => {
+        if (!calendarRef.current) return;
+
+        setPdfGenerating(true);
+        try {
+            const weekStart = formatDate(weekDays[0]);
+            const weekEnd = formatDate(weekDays[weekDays.length - 1]);
+            const fileName = `Turnos_Sala_Petrografia_${weekStart}_${weekEnd}.pdf`;
+
+            // Construir HTML manualmente con los datos
+            let tableRows = '';
+
+            for (const day of weekDays) {
+                const dayStr = formatDate(day);
+                const dayLabel = getDayLabel(day);
+
+                // Encabezado del día
+                tableRows += `
+                    <tr style="background-color: #e5e7eb; font-weight: bold;">
+                        <td colspan="${EQUIPMENT_LIST.length + 1}" style="padding: 6px 8px; font-size: 12px; border: 1px solid #999;">
+                            ${dayLabel}
+                        </td>
+                    </tr>
+                `;
+
+                // Filas de horarios
+                for (const slot of TIME_SLOTS) {
+                    const isLunchBreak = slot.id === '12:00';
+                    const rowStyle = isLunchBreak ? 'border-top: 1px solid #666;' : '';
+
+                    tableRows += `<tr style="${rowStyle}">`;
+
+                    // Columna de horario
+                    tableRows += `
+                        <td style="padding: 2px 2px 2px 2px; font-size: 12px; border: 1px solid #ccc; text-align: center; background-color: #f9fafb; font-weight: 400; width: 90px;">
+                            ${slot.label}
+                        </td>
+                    `;
+
+                    // Columnas de equipos
+                    for (const eq of EQUIPMENT_LIST) {
+                        const booking = getBookingForSlot(eq.id, slot.id, dayStr);
+                        const indefiniteBlock = getIndefiniteBlockForSlot(eq.id, dayStr);
+                        const displayBooking = indefiniteBlock || booking;
+                        const status = indefiniteBlock ? 'blocked' : (booking ? booking.status : 'available');
+
+                        let bgColor = '#d1fae5'; // available (verde claro)
+                        let content = '';
+
+                        if (status === 'approved') {
+                            bgColor = '#dbeafe'; // azul claro
+                            content = `<div style="font-size: 8px; text-align: center;"><strong>${displayBooking.userName || ''}</strong><br/><span style="font-size: 7px;">${displayBooking.userGroup || ''}</span></div>`;
+                        } else if (status === 'pending') {
+                            bgColor = '#fef3c7'; // amarillo claro
+                            content = `<div style="font-size: 8px; text-align: center;"><strong>${displayBooking.userName || ''}</strong><br/><span style="font-size: 7px;">${displayBooking.userGroup || ''}</span></div>`;
+                        } else if (status === 'blocked') {
+                            bgColor = '#f3f4f6'; // gris claro
+                            content = `<div style="font-size: 8px; text-align: center; color: #666;">🔒 ${displayBooking.blockedReason || 'Bloqueado'}</div>`;
+                        }
+
+                        tableRows += `
+                            <td style="padding: 8px 10px; font-size: 8px; border: 1px solid #ccc; background-color: ${bgColor}; min-width: 120px; max-width: 120px; overflow: hidden;">
+                                ${content}
+                            </td>
+                        `;
+                    }
+
+                    tableRows += `</tr>`;
+                }
+            }
+
+            const html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <style>
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        body { font-family: Arial, sans-serif; padding: 10px; }
+                        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+                        th, td { border: 1px solid #ccc; }
+                    </style>
+                </head>
+                <body>
+                    <h1 style="text-align: center; font-size: 18px; margin-bottom: 4px; font-weight: 800;">Turnos Sala de Petrografía DGB</h1>
+                    <p style="text-align: center; font-size: 12px; color: #666; font-weight: 400; margin-bottom: 8px;">
+                        Semana del ${new Date(weekDays[0]).toLocaleDateString('es-ES')} al ${new Date(weekDays[weekDays.length - 1]).toLocaleDateString('es-ES')}
+                    </p>
+                    <table>
+                        <thead>
+                            <tr style="background-color: #f3f4f6;">
+                                <th style="padding: 5px; font-size: 9px; border: 1px solid #999; width: 70px;">Horario</th>
+                                ${EQUIPMENT_LIST.map(eq => `
+                                    <th style="padding: 4px; font-size: 8.5px; border: 1px solid #999; text-align: center; min-width: 80px;">
+                                        <div style="font-weight: bold; line-height: 1.2;">${eq.name}</div>
+                                        <div style="font-size: 7px; color: #666; line-height: 1.2;">${eq.brand}</div>
+                                    </th>
+                                `).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </body>
+                </html>
+            `;
+
+            const opt: any = {
+                margin: [3, 3, 3, 3],
+                filename: fileName,
+                image: { type: 'jpeg' as const, quality: 0.98 },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    letterRendering: true
+                },
+                jsPDF: {
+                    unit: 'mm',
+                    format: 'letter',
+                    orientation: 'landscape'
+                }
+            };
+
+            await html2pdf().set(opt).from(html).save();
+        } catch (error) {
+            alert('Error al generar PDF: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        } finally {
+            setPdfGenerating(false);
         }
     };
 
@@ -579,25 +714,35 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                     <p className="text-sm text-slate-500">
                         Haz clic en una reserva del calendario para editarla o eliminarla.
                     </p>
-                    <div className="flex items-center bg-slate-100 rounded-lg p-1">
+                    <div className="flex items-center gap-2">
                         <button
-                            onClick={() => setWeekOffset(0)}
-                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${weekOffset === 0 ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                                }`}
+                            onClick={handleDownloadPDF}
+                            disabled={pdfGenerating}
+                            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition text-sm font-medium disabled:opacity-50"
                         >
-                            Esta Semana
+                            <Download className="w-4 h-4" />
+                            {pdfGenerating ? 'Generando...' : 'Descargar PDF'}
                         </button>
-                        <button
-                            onClick={() => setWeekOffset(1)}
-                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${weekOffset === 1 ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                                }`}
-                        >
-                            Próxima Semana
-                        </button>
+                        <div className="flex items-center bg-slate-100 rounded-lg p-1">
+                            <button
+                                onClick={() => setWeekOffset(0)}
+                                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${weekOffset === 0 ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                    }`}
+                            >
+                                Esta Semana
+                            </button>
+                            <button
+                                onClick={() => setWeekOffset(1)}
+                                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${weekOffset === 1 ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                    }`}
+                            >
+                                Próxima Semana
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <div className="space-y-6">
+                <div className="space-y-6" ref={calendarRef}>
                     {weekDays.map((day, dayIndex) => {
                         const dayStr = formatDate(day);
                         const isToday = formatDate(day) === formatDate(new Date());
