@@ -15,7 +15,7 @@ export const EQUIPMENT_LIST: Equipment[] = [
 
 export const TIME_SLOTS: TimeSlot[] = [
     { id: '08:00', label: '8:00 AM - 12:00 PM', startHour: 8 },
-    { id: '12:00', label: '1:00 PM - 4:00 PM', startHour: 13 },
+    { id: '12:00', label: '12:00 PM - 4:00 PM', startHour: 13 },
 ];
 
 export const ADMIN_CREDENTIALS = {
