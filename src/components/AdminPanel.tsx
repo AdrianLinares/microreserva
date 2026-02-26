@@ -127,7 +127,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                 // Encabezado del día
                 tableRows += `
                     <tr style="background-color: #e5e7eb; font-weight: bold;">
-                        <td colspan="${EQUIPMENT_LIST.length + 1}" style="padding: 6px 8px; font-size: 12px; border: 1px solid #999;">
+                        <td colspan="${EQUIPMENT_LIST.length + 1}" style="padding: 0 4px 4px 4px; font-size: 12px; border: 1px solid #999;">
                             ${dayLabel}
                         </td>
                     </tr>
@@ -169,7 +169,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                         }
 
                         tableRows += `
-                            <td style="padding: 8px 10px; font-size: 8px; border: 1px solid #ccc; background-color: ${bgColor}; min-width: 120px; max-width: 120px; overflow: hidden;">
+                            <td style="padding: 8px 8px; font-size: 8px; border: 1px solid #ccc; background-color: ${bgColor}; min-width: 120px; max-width: 120px; overflow: hidden;">
                                 ${content}
                             </td>
                         `;
@@ -186,22 +186,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                     <meta charset="UTF-8">
                     <style>
                         * { margin: 0; padding: 0; box-sizing: border-box; }
-                        body { font-family: Arial, sans-serif; padding: 10px; }
+                        body { font-family: Arial, sans-serif; padding: 2px 2px 10px 10px; }
                         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
                         th, td { border: 1px solid #ccc; }
                     </style>
                 </head>
                 <body>
-                    <h1 style="text-align: center; font-size: 18px; margin-bottom: 4px; font-weight: 800;">Turnos Sala de Petrografía DGB</h1>
+                    <h1 style="text-align: center; font-size: 18px; margin: 0 0 4px 0; font-weight: 800;">Turnos Sala de Petrografía DGB</h1>
                     <p style="text-align: center; font-size: 12px; color: #666; font-weight: 400; margin-bottom: 8px;">
                         Semana del ${new Date(weekDays[0]).toLocaleDateString('es-ES')} al ${new Date(weekDays[weekDays.length - 1]).toLocaleDateString('es-ES')}
                     </p>
                     <table>
                         <thead>
                             <tr style="background-color: #f3f4f6;">
-                                <th style="padding: 5px; font-size: 9px; border: 1px solid #999; width: 70px;">Horario</th>
+                                <th style="padding: 2px 5px 6px 5px; font-size: 9px; border: 1px solid #999; width: 70px;">Horario</th>
                                 ${EQUIPMENT_LIST.map(eq => `
-                                    <th style="padding: 4px; font-size: 8.5px; border: 1px solid #999; text-align: center; min-width: 80px;">
+                                    <th style="padding: 2px 4px 6px 4px; font-size: 8.5px; border: 1px solid #999; text-align: center; min-width: 80px;">
                                         <div style="font-weight: bold; line-height: 1.2;">${eq.name}</div>
                                         <div style="font-size: 7px; color: #666; line-height: 1.2;">${eq.type} - ${eq.brand}</div>
                                         <div style="font-size: 7px; color: #666; line-height: 1.2;">${eq.obj}</div>
