@@ -2,8 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Booking, BookingStatus } from '../types';
 import { EQUIPMENT_LIST, TIME_SLOTS } from '../constants';
 import * as api from '../services/api';
-import { Pencil, X, Calendar as CalendarIcon, Lock, Trash2, Copy, Check, Download } from 'lucide-react';
+import { Pencil, X, Calendar as CalendarIcon, Lock, Trash2, Copy, Check, Download, Plus } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
+import AdminBookingModal from './AdminBookingModal';
 
 interface AdminPanelProps {
     bookings: Booking[];
@@ -15,6 +16,9 @@ const formatDate = (date: Date) => date.toISOString().split('T')[0];
 const getDayLabel = (date: Date) => date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout }) => {
+    // Only authenticated admins can access this component, so isAdmin is always true
+    const isAdmin = true;
+
     const [notificationEmail, setNotificationEmail] = useState('');
     const [notificationStatus, setNotificationStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
     const [emailCopied, setEmailCopied] = useState(false);
@@ -32,6 +36,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
     const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
     const [editForm, setEditForm] = useState({ date: '', equipmentId: 0, timeSlotId: '' });
     const [swapTargetId, setSwapTargetId] = useState('');
+
+    // State for admin booking
+    const [selectedAdminSlots, setSelectedAdminSlots] = useState<Array<{ date: string; equipmentId: number; timeSlotId: string }>>([]);
+    const [adminBookingModalOpen, setAdminBookingModalOpen] = useState(false);
+    const [adminBookingLoading, setAdminBookingLoading] = useState(false);
 
     // State for Calendar Preview
     const [weekOffset, setWeekOffset] = useState(0);
@@ -447,6 +456,50 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         }
     };
 
+    // Admin Booking Handlers
+    const handleAdminSlotClick = (date: string, equipmentId: number, timeSlotId: string) => {
+        const slotKey = `${date}-${equipmentId}-${timeSlotId}`;
+        const isSelected = selectedAdminSlots.some(s => `${s.date}-${s.equipmentId}-${s.timeSlotId}` === slotKey);
+
+        if (isSelected) {
+            setSelectedAdminSlots(prev => prev.filter(s => `${s.date}-${s.equipmentId}-${s.timeSlotId}` !== slotKey));
+        } else {
+            setSelectedAdminSlots(prev => [...prev, { date, equipmentId, timeSlotId }]);
+        }
+    };
+
+    const handleAdminBookingSubmit = async (data: { name: string; email: string; group: string; slots: Array<{ date: string; equipmentId: number; timeSlotId: string }> }) => {
+        setAdminBookingLoading(true);
+        try {
+            const timestamp = Date.now();
+
+            for (const slot of data.slots) {
+                const bookingId = `${slot.date}-${slot.equipmentId}-${slot.timeSlotId}`;
+                await api.addBooking({
+                    id: bookingId,
+                    date: slot.date,
+                    equipmentId: slot.equipmentId,
+                    timeSlotId: slot.timeSlotId,
+                    status: 'pending',
+                    userName: data.name,
+                    userEmail: data.email,
+                    userGroup: data.group,
+                    timestamp
+                } as any);
+            }
+
+            setSelectedAdminSlots([]);
+            setAdminBookingModalOpen(false);
+            await refreshData();
+            alert(`Solicitud de reserva creada exitosamente para ${data.name} (${data.slots.length} turno(s)).`);
+        } catch (error) {
+            console.error('Error creating admin booking:', error);
+            alert('Error al crear la solicitud: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        } finally {
+            setAdminBookingLoading(false);
+        }
+    };
+
     // Grid Helpers
     const bookingMap = useMemo(() => {
         const map = new Map<string, Booking>();
@@ -740,6 +793,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                 Próxima Semana
                             </button>
                         </div>
+                        {selectedAdminSlots.length > 0 && (
+                            <button
+                                onClick={() => setAdminBookingModalOpen(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition text-sm font-medium shadow-md"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Crear Reserva ({selectedAdminSlots.length} turno{selectedAdminSlots.length !== 1 ? 's' : ''})
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -791,12 +853,22 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                                             const displayBooking = indefiniteBlock || booking;
                                                             const status = indefiniteBlock ? 'blocked' : (booking ? booking.status : 'available');
 
+                                                            const isAdminSelected = isAdmin && selectedAdminSlots.some(s =>
+                                                                s.date === dayStr && s.equipmentId === eq.id && s.timeSlotId === slot.id
+                                                            );
+
                                                             return (
                                                                 <td
                                                                     key={eq.id}
-                                                                    className={`${rowClasses} ${getCellColor(status)} ${displayBooking ? 'cursor-pointer' : ''}`}
-                                                                    onClick={() => displayBooking && handleEditClick(displayBooking)}
-                                                                    title={displayBooking ? 'Haz clic para gestionar' : 'Disponible'}
+                                                                    className={`${rowClasses} ${getCellColor(status)} ${isAdminSelected ? 'ring-2 ring-blue-500 ring-inset' : ''} ${!displayBooking && isAdmin ? 'cursor-pointer hover:bg-blue-50' : displayBooking ? 'cursor-pointer' : ''}`}
+                                                                    onClick={() => {
+                                                                        if (!displayBooking && isAdmin) {
+                                                                            handleAdminSlotClick(dayStr, eq.id, slot.id);
+                                                                        } else if (displayBooking) {
+                                                                            handleEditClick(displayBooking);
+                                                                        }
+                                                                    }}
+                                                                    title={!displayBooking && isAdmin ? 'Clic para seleccionar' : displayBooking ? 'Haz clic para gestionar' : 'Disponible'}
                                                                 >
                                                                     <div className="h-full flex flex-col justify-center text-[10px]">
                                                                         {displayBooking ? (
@@ -958,6 +1030,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                     </div>
                 </div>
             )}
+
+            {/* Admin Booking Modal */}
+            <AdminBookingModal
+                isOpen={adminBookingModalOpen}
+                selectedSlots={selectedAdminSlots}
+                onClose={() => {
+                    setAdminBookingModalOpen(false);
+                    setSelectedAdminSlots([]);
+                }}
+                onSubmit={handleAdminBookingSubmit}
+                isLoading={adminBookingLoading}
+            />
         </div>
     );
 };
