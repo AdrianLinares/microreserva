@@ -76,6 +76,16 @@ const handler: Handler = async (event, context) => {
                 // Update status only
                 const statusPayload = body as UpdateStatusPayload;
 
+                // Validate status value
+                const validStatuses = ['pending', 'approved', 'blocked', 'available'];
+                if (!validStatuses.includes(statusPayload.status)) {
+                    return {
+                        statusCode: 400,
+                        headers: getCorsHeaders(),
+                        body: JSON.stringify({ error: 'Invalid status value' }),
+                    };
+                }
+
                 await sql`UPDATE bookings SET status = ${statusPayload.status} WHERE id = ${bookingId}`;
 
                 return {

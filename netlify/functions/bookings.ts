@@ -1,5 +1,6 @@
 import { Handler } from '@netlify/functions';
 import { neon } from '@neondatabase/serverless';
+import { verifyAdminAuth } from './lib/auth';
 
 if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL environment variable is not set');
@@ -132,6 +133,50 @@ const handler: Handler = async (event, context) => {
                 };
             }
 
+            // Validate status is one of allowed values
+            const validStatuses = ['pending', 'approved', 'blocked'];
+            if (!booking.status || !validStatuses.includes(booking.status)) {
+                return {
+                    statusCode: 400,
+                    headers: getCorsHeaders(),
+                    body: JSON.stringify({ error: 'Invalid status. Must be: pending, approved, or blocked' }),
+                };
+            }
+
+            // Validate date format (YYYY-MM-DD)
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(booking.date)) {
+                return {
+                    statusCode: 400,
+                    headers: getCorsHeaders(),
+                    body: JSON.stringify({ error: 'Invalid date format. Use YYYY-MM-DD' }),
+                };
+            }
+
+            // Security: Check authentication for blocked/approved status and block fields
+            const authHeader = event.headers.authorization || event.headers.Authorization;
+            const isAuthorized = await verifyAdminAuth(authHeader);
+
+            if (!isAuthorized) {
+                // Without auth, only allow 'pending' status and no block fields
+                if (booking.status !== 'pending') {
+                    return {
+                        statusCode: 401,
+                        headers: getCorsHeaders(),
+                        body: JSON.stringify({ error: 'No autorizado para crear reservas con este estado' }),
+                    };
+                }
+                if (booking.blockedReason || booking.blockType || booking.blockStartDate || booking.blockEndDate) {
+                    return {
+                        statusCode: 401,
+                        headers: getCorsHeaders(),
+                        body: JSON.stringify({ error: 'No autorizado para crear bloqueos' }),
+                    };
+                }
+            }
+
+            // Generate timestamp server-side to prevent rate limit bypass
+            booking.timestamp = Date.now();
+
             // Check if slot is already occupied
             const existingBooking = await sql`SELECT * FROM bookings WHERE equipment_id = ${booking.equipmentId} AND date = ${booking.date} AND time_slot_id = ${booking.timeSlotId} AND status != 'available'`;
 
@@ -159,8 +204,8 @@ const handler: Handler = async (event, context) => {
                 }
             }
 
-            // Rate limiting: max 20 inserts per email in last 1 hour
-            if (booking.userEmail && booking.status === 'pending') {
+            // Rate limiting: max 20 inserts per email in last 1 hour (only for non-admin users)
+            if (booking.userEmail && booking.status === 'pending' && !isAuthorized) {
                 const oneHourAgo = Date.now() - RATE_LIMIT_WINDOW_MS;
                 const recentInserts = await sql`SELECT COUNT(*) as count FROM bookings WHERE user_email = ${booking.userEmail} AND timestamp > ${oneHourAgo}`;
 

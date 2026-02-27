@@ -84,9 +84,18 @@ const App: React.FC = () => {
         });
     }, [filterType, filterBrand]);
 
+    // Optimized booking lookup map
+    const bookingMap = useMemo(() => {
+        const map = new Map<string, Booking>();
+        bookings.forEach(b => {
+            map.set(`${b.date}-${b.equipmentId}-${b.timeSlotId}`, b);
+        });
+        return map;
+    }, [bookings]);
+
     // Derived Bookings for efficient lookup
     const getBookingForSlot = (eqId: number, timeId: string, date: string) => {
-        return bookings.find(b => b.equipmentId === eqId && b.timeSlotId === timeId && b.date === date);
+        return bookingMap.get(`${date}-${eqId}-${timeId}`);
     };
 
     const isSlotSelected = (eqId: number, timeId: string, date: string) => {

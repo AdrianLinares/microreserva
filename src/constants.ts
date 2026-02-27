@@ -17,10 +17,3 @@ export const TIME_SLOTS: TimeSlot[] = [
     { id: '08:00', label: '8:00 AM - 12:00 PM', startHour: 8 },
     { id: '12:00', label: '12:00 PM - 4:00 PM', startHour: 13 },
 ];
-
-export const ADMIN_CREDENTIALS = {
-    username: 'admin',
-    password: 'password123' // Simple mock auth
-};
-
-export const MOCK_ADMIN_EMAIL = "admin@geociencias.gov";
