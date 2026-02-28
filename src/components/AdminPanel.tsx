@@ -472,26 +472,51 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         setAdminBookingLoading(true);
         try {
             const timestamp = Date.now();
+            const errors: string[] = [];
+            let successCount = 0;
 
             for (const slot of data.slots) {
-                const bookingId = `${slot.date}-${slot.equipmentId}-${slot.timeSlotId}`;
-                await api.addBooking({
-                    id: bookingId,
-                    date: slot.date,
-                    equipmentId: slot.equipmentId,
-                    timeSlotId: slot.timeSlotId,
-                    status: 'pending',
-                    userName: data.name,
-                    userEmail: data.email,
-                    userGroup: data.group,
-                    timestamp
-                } as any);
+                // Verify slot is not occupied by a real booking
+                const existingBooking = getBookingForSlot(slot.equipmentId, slot.timeSlotId, slot.date);
+                const indefiniteBlock = getIndefiniteBlockForSlot(slot.equipmentId, slot.date);
+
+                if (existingBooking || indefiniteBlock) {
+                    errors.push(`${slot.date} - Equipo ${slot.equipmentId} - ${slot.timeSlotId}: ya está ocupado`);
+                    continue;
+                }
+
+                try {
+                    const bookingId = `${slot.date}-${slot.equipmentId}-${slot.timeSlotId}`;
+
+                    // Backend handles UPSERT - no need to delete 'available' entries manually
+                    await api.addBooking({
+                        id: bookingId,
+                        date: slot.date,
+                        equipmentId: slot.equipmentId,
+                        timeSlotId: slot.timeSlotId,
+                        status: 'pending',
+                        userName: data.name,
+                        userEmail: data.email,
+                        userGroup: data.group,
+                        timestamp
+                    } as any);
+                    successCount++;
+                } catch (error) {
+                    errors.push(`${slot.date} - Equipo ${slot.equipmentId} - ${slot.timeSlotId}: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+                }
             }
 
             setSelectedAdminSlots([]);
             setAdminBookingModalOpen(false);
             await refreshData();
-            alert(`Solicitud de reserva creada exitosamente para ${data.name} (${data.slots.length} turno(s)).`);
+
+            if (successCount > 0 && errors.length === 0) {
+                alert(`Solicitud de reserva creada exitosamente para ${data.name} (${successCount} turno(s)).`);
+            } else if (successCount > 0 && errors.length > 0) {
+                alert(`Se crearon ${successCount} turno(s) exitosamente.\n\nErrores en ${errors.length} turno(s):\n${errors.join('\n')}`);
+            } else {
+                alert(`No se pudo crear ninguna reserva.\n\nErrores:\n${errors.join('\n')}`);
+            }
         } catch (error) {
             console.error('Error creating admin booking:', error);
             alert('Error al crear la solicitud: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -504,7 +529,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
     const bookingMap = useMemo(() => {
         const map = new Map<string, Booking>();
         bookings.forEach(b => {
-            map.set(`${b.date}-${b.equipmentId}-${b.timeSlotId}`, b);
+            // Only include bookings that actually occupy the slot (not 'available')
+            if (b.status !== 'available') {
+                map.set(`${b.date}-${b.equipmentId}-${b.timeSlotId}`, b);
+            }
         });
         return map;
     }, [bookings]);

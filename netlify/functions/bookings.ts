@@ -177,15 +177,19 @@ const handler: Handler = async (event, context) => {
             // Generate timestamp server-side to prevent rate limit bypass
             booking.timestamp = Date.now();
 
-            // Check if slot is already occupied
-            const existingBooking = await sql`SELECT * FROM bookings WHERE equipment_id = ${booking.equipmentId} AND date = ${booking.date} AND time_slot_id = ${booking.timeSlotId} AND status != 'available'`;
+            // Check if slot is already occupied by a non-available booking
+            const existingBooking = await sql`SELECT * FROM bookings WHERE equipment_id = ${booking.equipmentId} AND date = ${booking.date} AND time_slot_id = ${booking.timeSlotId}`;
 
             if (existingBooking.length > 0) {
-                return {
-                    statusCode: 409,
-                    headers: getCorsHeaders(),
-                    body: JSON.stringify({ error: 'Este turno ya ha sido reservado o solicitado.' }),
-                };
+                const existing = existingBooking[0] as any;
+                // Only allow overwrite if existing status is 'available'
+                if (existing.status !== 'available') {
+                    return {
+                        statusCode: 409,
+                        headers: getCorsHeaders(),
+                        body: JSON.stringify({ error: 'Este turno ya ha sido reservado o solicitado.' }),
+                    };
+                }
             }
 
             // Enforce MAX_SLOTS_PER_PERSON for pending bookings
@@ -221,11 +225,28 @@ const handler: Handler = async (event, context) => {
                 }
             }
 
-            // Insert booking
+            // Insert or update booking (UPSERT to handle 'available' status entries)
             const snake = camelToSnake(booking);
+
+            // If there's a conflict on ID, update only if the existing entry was 'available'
+            // Since we already checked above, we can safely use UPSERT here
             await sql`
         INSERT INTO bookings (id, equipment_id, date, time_slot_id, status, user_name, user_email, user_group, blocked_reason, block_type, block_start_date, block_end_date, timestamp)
         VALUES (${snake.id}, ${snake.equipment_id}, ${snake.date}, ${snake.time_slot_id}, ${snake.status}, ${snake.user_name}, ${snake.user_email}, ${snake.user_group}, ${snake.blocked_reason}, ${snake.block_type}, ${snake.block_start_date}, ${snake.block_end_date}, ${snake.timestamp})
+        ON CONFLICT (id) 
+        DO UPDATE SET 
+            equipment_id = EXCLUDED.equipment_id,
+            date = EXCLUDED.date,
+            time_slot_id = EXCLUDED.time_slot_id,
+            status = EXCLUDED.status,
+            user_name = EXCLUDED.user_name,
+            user_email = EXCLUDED.user_email,
+            user_group = EXCLUDED.user_group,
+            blocked_reason = EXCLUDED.blocked_reason,
+            block_type = EXCLUDED.block_type,
+            block_start_date = EXCLUDED.block_start_date,
+            block_end_date = EXCLUDED.block_end_date,
+            timestamp = EXCLUDED.timestamp
       `;
 
             return {
