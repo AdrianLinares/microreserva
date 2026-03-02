@@ -28,6 +28,7 @@ const isBookingWindowOpen = () => {
 const formatDate = (date: Date) => date.toISOString().split('T')[0];
 const getDayLabel = (date: Date) => date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
 const DEFAULT_NEXT_WEEK_SLOTS_LIMIT = 6;
+const LIVE_REFRESH_INTERVAL_MS = 15000;
 
 const parseIsoDateLocal = (dateStr: string) => {
     const [year, month, day] = dateStr.split('-').map(Number);
@@ -146,6 +147,24 @@ const App: React.FC = () => {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             window.removeEventListener('focus', handleFocus);
             window.removeEventListener('pageshow', handlePageShow);
+        };
+    }, [refreshData, loadPublicSettings]);
+
+    // Live refresh while app is open (multi-user updates)
+    useEffect(() => {
+        const intervalId = window.setInterval(() => {
+            if (document.visibilityState !== 'visible') return;
+            if (isSyncingRef.current) return;
+
+            isSyncingRef.current = true;
+            Promise.all([refreshData(), loadPublicSettings()])
+                .finally(() => {
+                    isSyncingRef.current = false;
+                });
+        }, LIVE_REFRESH_INTERVAL_MS);
+
+        return () => {
+            window.clearInterval(intervalId);
         };
     }, [refreshData, loadPublicSettings]);
 
