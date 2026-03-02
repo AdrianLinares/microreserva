@@ -1,7 +1,7 @@
 import { Booking, BookingStatus } from '../types';
 
 const API_URL = (import.meta as any).env.VITE_API_URL || '/.netlify/functions';
-const ADMIN_TOKEN_KEY = 'petro_admin_token';
+const ADMIN_TOKEN_KEY = 'micro_admin_token';
 
 /**
  * Save admin credentials to sessionStorage as base64(username:password)
