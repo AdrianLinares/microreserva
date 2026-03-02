@@ -1,7 +1,5 @@
 import { Equipment, TimeSlot } from './types';
 
-export const MAX_SLOTS_PER_PERSON = 6;
-
 export const EQUIPMENT_LIST: Equipment[] = [
     { id: 1, name: 'MESA No. 1', description: 'ESTEREOMICROSCOPIO ZEISS (con Cámara)', type: 'Estereomicroscopio', brand: 'ZEISS', obj: 'obj 0.63x, 1x, 1.5x', hasCamera: true },
     { id: 2, name: 'MESA No. 2', description: 'MICROSCOPIO ZEISS (con Cámara)', type: 'Microscopio', brand: 'ZEISS', obj: 'obj 2.5x, 4x, 10x, 20x, 50x, 100x', hasCamera: true },

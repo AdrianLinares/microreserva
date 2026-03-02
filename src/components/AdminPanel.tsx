@@ -137,9 +137,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         try {
             // Save email for next time
             await api.saveAdminSettings({ notificationEmail });
-
-            // Mock sending email
-            console.log(`Sending notifications from ${notificationEmail} to approved/rejected users...`);
             setNotificationStatus('sent');
             setTimeout(() => setNotificationStatus('idle'), 3000);
         } catch (error) {

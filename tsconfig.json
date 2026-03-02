@@ -9,7 +9,12 @@
       "DOM",
       "DOM.Iterable"
     ],
-    "skipLibCheck": true,
+    "skipLibCheck": false,
+    "noImplicitAny": false,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "strictNullChecks": false,
+    "strictFunctionTypes": false,
     "types": [
       "node"
     ],
@@ -18,11 +23,7 @@
     "moduleDetection": "force",
     "allowJs": true,
     "jsx": "react-jsx",
-    "paths": {
-      "@/*": [
-        "./*"
-      ]
-    },
+
     "allowImportingTsExtensions": true,
     "noEmit": true
   }
