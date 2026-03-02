@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { EQUIPMENT_LIST, TIME_SLOTS } from './constants';
 import { generateWeekDays, getBookings, addBooking, saveAdminCredentials, clearAdminCredentials, getAdminSettings, getPublicSettings } from './services/api';
 import { Booking, BookingStatus } from './types';
@@ -75,6 +75,7 @@ const App: React.FC = () => {
     const [loginPassword, setLoginPassword] = useState('');
     const [loginError, setLoginError] = useState<string | null>(null);
     const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
+    const isSyncingRef = useRef(false);
 
     // Async refresh data helper
     const refreshData = useCallback(async () => {
@@ -107,6 +108,45 @@ const App: React.FC = () => {
                 setIsLoading(false);
             }
         })();
+    }, [refreshData, loadPublicSettings]);
+
+    // Keep data fresh when the app is restored/opened from bookmark or tab focus
+    useEffect(() => {
+        const syncLatestData = async () => {
+            if (isSyncingRef.current) return;
+            isSyncingRef.current = true;
+            try {
+                await Promise.all([refreshData(), loadPublicSettings()]);
+            } finally {
+                isSyncingRef.current = false;
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                void syncLatestData();
+            }
+        };
+
+        const handleFocus = () => {
+            void syncLatestData();
+        };
+
+        const handlePageShow = (event: PageTransitionEvent) => {
+            if (event.persisted) {
+                void syncLatestData();
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', handleFocus);
+        window.addEventListener('pageshow', handlePageShow);
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('pageshow', handlePageShow);
+        };
     }, [refreshData, loadPublicSettings]);
 
     // Filtering Equipment
