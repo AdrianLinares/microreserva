@@ -8,9 +8,37 @@ if (!process.env.DATABASE_URL) {
 
 const sql = neon(process.env.DATABASE_URL);
 
-const MAX_SLOTS_PER_PERSON = 6;
+const DEFAULT_NEXT_WEEK_SLOTS_LIMIT = 6;
 const RATE_LIMIT_WINDOW_MS = 3600000; // 1 hour
 const RATE_LIMIT_MAX_INSERTS = 20;
+
+function parseIsoDateToUtc(date: string): Date {
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day));
+}
+
+function getMondayUtc(date: Date): Date {
+    const monday = new Date(date);
+    const day = monday.getUTCDay(); // 0 Sun, 1 Mon, ... 6 Sat
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    monday.setUTCDate(monday.getUTCDate() + diffToMonday);
+    monday.setUTCHours(0, 0, 0, 0);
+    return monday;
+}
+
+function formatUtcDate(date: Date): string {
+    return date.toISOString().split('T')[0];
+}
+
+function getWeekRangeUtc(date: Date): { start: string; endExclusive: string } {
+    const weekStart = getMondayUtc(date);
+    const weekEndExclusive = new Date(weekStart);
+    weekEndExclusive.setUTCDate(weekEndExclusive.getUTCDate() + 7);
+    return {
+        start: formatUtcDate(weekStart),
+        endExclusive: formatUtcDate(weekEndExclusive),
+    };
+}
 
 interface DbBooking {
     id: string;
@@ -192,19 +220,43 @@ const handler: Handler = async (event, context) => {
                 }
             }
 
-            // Enforce MAX_SLOTS_PER_PERSON for pending bookings
+            // Enforce configurable next-week slots limit only for next-week bookings
             if (booking.status === 'pending' && booking.userEmail) {
-                const activeBookings = await sql`SELECT COUNT(*) as count FROM bookings WHERE user_email = ${booking.userEmail} AND status IN ('pending', 'approved')`;
+                const bookingWeekStart = formatUtcDate(getMondayUtc(parseIsoDateToUtc(booking.date)));
+                const currentWeekStartDate = getMondayUtc(new Date());
+                const nextWeekStartDate = new Date(currentWeekStartDate);
+                nextWeekStartDate.setUTCDate(nextWeekStartDate.getUTCDate() + 7);
+                const nextWeekStart = formatUtcDate(nextWeekStartDate);
 
-                const activeCount = parseInt((activeBookings[0] as any).count as string, 10);
-                if (activeCount >= MAX_SLOTS_PER_PERSON) {
-                    return {
-                        statusCode: 429,
-                        headers: getCorsHeaders(),
-                        body: JSON.stringify({
-                            error: `Límite excedido. Ya tienes ${activeCount} turnos activos. El máximo es ${MAX_SLOTS_PER_PERSON}.`,
-                        }),
-                    };
+                if (bookingWeekStart === nextWeekStart) {
+                    const limitRow = await sql`SELECT value FROM admin_settings WHERE key = 'next_week_slots_limit'`;
+                    const limitRaw = limitRow.length > 0 ? (limitRow[0] as any).value : null;
+                    const parsedLimit = limitRaw ? Number.parseInt(limitRaw as string, 10) : NaN;
+                    const nextWeekSlotsLimit = Number.isFinite(parsedLimit) && parsedLimit > 0
+                        ? parsedLimit
+                        : DEFAULT_NEXT_WEEK_SLOTS_LIMIT;
+
+                    const nextWeekRange = getWeekRangeUtc(nextWeekStartDate);
+
+                    const activeBookings = await sql`
+                        SELECT COUNT(*) as count
+                        FROM bookings
+                        WHERE user_email = ${booking.userEmail}
+                          AND status IN ('pending', 'approved')
+                          AND date >= ${nextWeekRange.start}
+                          AND date < ${nextWeekRange.endExclusive}
+                    `;
+
+                    const activeCount = parseInt((activeBookings[0] as any).count as string, 10);
+                    if (activeCount >= nextWeekSlotsLimit) {
+                        return {
+                            statusCode: 429,
+                            headers: getCorsHeaders(),
+                            body: JSON.stringify({
+                                error: `Límite excedido para la próxima semana. Ya tienes ${activeCount} turnos (pendientes/aprobados) para esa semana. El máximo configurado es ${nextWeekSlotsLimit}.`,
+                            }),
+                        };
+                    }
                 }
             }
 

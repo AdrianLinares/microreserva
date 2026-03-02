@@ -38,7 +38,7 @@ async function request<T>(
 ): Promise<T> {
     const url = `${API_URL}${path}`;
 
-    const headers: any = {
+    const baseHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
     };
 
@@ -47,11 +47,18 @@ async function request<T>(
         if (!authHeader) {
             throw new Error('Admin credentials not found');
         }
-        headers.Authorization = authHeader;
+        baseHeaders.Authorization = authHeader;
     }
+
+    const optionHeaders = (options.headers || {}) as Record<string, string>;
+    const headers = {
+        ...baseHeaders,
+        ...optionHeaders,
+    };
 
     const response = await fetch(url, {
         ...options,
+        cache: options.cache ?? (options.method === 'GET' || !options.method ? 'no-store' : undefined),
         headers,
     });
 
@@ -77,7 +84,10 @@ async function request<T>(
  * Get all bookings from the server
  */
 export async function getBookings(): Promise<Booking[]> {
-    return request<Booking[]>('/bookings', { method: 'GET' });
+    return request<Booking[]>(`/bookings?t=${Date.now()}`, {
+        method: 'GET',
+        cache: 'no-store',
+    });
 }
 
 /**
@@ -152,17 +162,32 @@ export async function swapBookingSlots(firstId: string, secondId: string): Promi
     }, true);
 }
 
+export interface PublicAdminSettings {
+    nextWeekSlotsLimit: number;
+}
+
+export interface AdminSettings extends PublicAdminSettings {
+    notificationEmail: string;
+}
+
 /**
  * Get admin settings
  */
-export async function getAdminSettings(): Promise<{ notificationEmail: string }> {
+export async function getAdminSettings(): Promise<AdminSettings> {
     return request('/settings', { method: 'GET' }, true);
+}
+
+/**
+ * Get public settings (no admin auth required)
+ */
+export async function getPublicSettings(): Promise<PublicAdminSettings> {
+    return request('/settings', { method: 'GET' });
 }
 
 /**
  * Save admin settings
  */
-export async function saveAdminSettings(settings: { notificationEmail: string }): Promise<void> {
+export async function saveAdminSettings(settings: { notificationEmail?: string; nextWeekSlotsLimit?: number }): Promise<void> {
     await request('/settings', {
         method: 'PUT',
         body: JSON.stringify(settings),

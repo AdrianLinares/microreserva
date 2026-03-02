@@ -27,6 +27,7 @@ CREATE TABLE admin_settings (
 
 -- Insert default settings
 INSERT INTO admin_settings (key, value) VALUES ('notification_email', '');
+INSERT INTO admin_settings (key, value) VALUES ('next_week_slots_limit', '6');
 
 -- Indexes for performance
 CREATE INDEX idx_bookings_date ON bookings(date);

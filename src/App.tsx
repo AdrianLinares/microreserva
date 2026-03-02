@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { EQUIPMENT_LIST, TIME_SLOTS, MAX_SLOTS_PER_PERSON } from './constants';
-import { generateWeekDays, getBookings, addBooking, saveAdminCredentials, clearAdminCredentials, getAdminSettings } from './services/api';
+import { EQUIPMENT_LIST, TIME_SLOTS } from './constants';
+import { generateWeekDays, getBookings, addBooking, saveAdminCredentials, clearAdminCredentials, getAdminSettings, getPublicSettings } from './services/api';
 import { Booking, BookingStatus } from './types';
 import BookingModal from './components/BookingModal';
 import AdminPanel from './components/AdminPanel';
@@ -27,6 +27,28 @@ const isBookingWindowOpen = () => {
 
 const formatDate = (date: Date) => date.toISOString().split('T')[0];
 const getDayLabel = (date: Date) => date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+const DEFAULT_NEXT_WEEK_SLOTS_LIMIT = 6;
+
+const parseIsoDateLocal = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+};
+
+const getMondayLocal = (inputDate: Date) => {
+    const date = new Date(inputDate);
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+    date.setDate(diff);
+    date.setHours(0, 0, 0, 0);
+    return date;
+};
+
+const isDateInNextWeek = (dateStr: string) => {
+    const targetWeekStart = getMondayLocal(parseIsoDateLocal(dateStr));
+    const nextWeekStart = getMondayLocal(new Date());
+    nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+    return targetWeekStart.getTime() === nextWeekStart.getTime();
+};
 
 const App: React.FC = () => {
     // Global State
@@ -35,6 +57,7 @@ const App: React.FC = () => {
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [apiError, setApiError] = useState<string | null>(null);
+    const [nextWeekSlotsLimit, setNextWeekSlotsLimit] = useState(DEFAULT_NEXT_WEEK_SLOTS_LIMIT);
 
     // Week Navigation State
     const [weekOffset, setWeekOffset] = useState(0);
@@ -64,16 +87,27 @@ const App: React.FC = () => {
         }
     }, []);
 
+    const loadPublicSettings = useCallback(async () => {
+        try {
+            const settings = await getPublicSettings();
+            if (Number.isInteger(settings.nextWeekSlotsLimit) && settings.nextWeekSlotsLimit > 0) {
+                setNextWeekSlotsLimit(settings.nextWeekSlotsLimit);
+            }
+        } catch (error) {
+            console.error('Error loading public settings:', error);
+        }
+    }, []);
+
     // Initial Load
     useEffect(() => {
         (async () => {
             try {
-                await refreshData();
+                await Promise.all([refreshData(), loadPublicSettings()]);
             } finally {
                 setIsLoading(false);
             }
         })();
-    }, [refreshData]);
+    }, [refreshData, loadPublicSettings]);
 
     // Filtering Equipment
     const visibleEquipment = useMemo(() => {
@@ -141,10 +175,13 @@ const App: React.FC = () => {
         if (isSelected) {
             setSelectedSlots(prev => prev.filter(s => !(s.equipmentId === eqId && s.timeSlotId === timeId && s.date === date)));
         } else {
-            // Check Limit for UI selection
-            if (selectedSlots.length >= MAX_SLOTS_PER_PERSON) {
-                alert(`Solo puedes seleccionar un máximo de ${MAX_SLOTS_PER_PERSON} turnos por solicitud.`);
-                return;
+            // Check next-week limit only for slots in next week
+            if (isDateInNextWeek(date)) {
+                const selectedNextWeekCount = selectedSlots.filter(slot => isDateInNextWeek(slot.date)).length;
+                if (selectedNextWeekCount >= nextWeekSlotsLimit) {
+                    alert(`Solo puedes seleccionar un máximo de ${nextWeekSlotsLimit} turnos para la próxima semana.`);
+                    return;
+                }
             }
             setSelectedSlots(prev => [...prev, { date, equipmentId: eqId, timeSlotId: timeId }]);
         }
@@ -152,19 +189,18 @@ const App: React.FC = () => {
 
     const handleBookingSubmit = async (userData: { name: string; email: string; group: string }) => {
 
-        // Check global limit (History + New Selection)
-        // Only count actual user bookings, not blocked slots or system blocks
-        const activeBookingsCount = bookings.filter(b =>
+        // Enforce only next-week limit (do not count current week bookings)
+        const activeNextWeekBookingsCount = bookings.filter(b =>
             b.userEmail === userData.email &&
-            b.userName &&  // Ensure it's an actual user booking
-            (b.status === 'pending' || b.status === 'approved')
+            b.userName &&
+            (b.status === 'pending' || b.status === 'approved') &&
+            isDateInNextWeek(b.date)
         ).length;
 
-        // Debug: Log bookings for this user
-        console.log('Active bookings count:', activeBookingsCount);
+        const selectedNextWeekCount = selectedSlots.filter(slot => isDateInNextWeek(slot.date)).length;
 
-        if (activeBookingsCount + selectedSlots.length > MAX_SLOTS_PER_PERSON) {
-            alert(`Límite excedido. \n\nYa tienes ${activeBookingsCount} turnos activos (pendientes o aprobados) y estás intentando solicitar ${selectedSlots.length} más. \n\nEl límite total por persona es de ${MAX_SLOTS_PER_PERSON} turnos.`);
+        if (activeNextWeekBookingsCount + selectedNextWeekCount > nextWeekSlotsLimit) {
+            alert(`Límite excedido para la próxima semana. \n\nYa tienes ${activeNextWeekBookingsCount} turnos activos (pendientes o aprobados) para la próxima semana y estás intentando solicitar ${selectedNextWeekCount} más. \n\nEl límite configurado es de ${nextWeekSlotsLimit} turnos.`);
             return;
         }
 
@@ -337,7 +373,7 @@ const App: React.FC = () => {
                     <AdminPanel
                         bookings={bookings}
                         refreshData={refreshData}
-                        onLogout={() => { clearAdminCredentials(); setIsAdmin(false); setSelectedSlots([]); }}
+                        onLogout={() => { clearAdminCredentials(); setIsAdmin(false); setSelectedSlots([]); void loadPublicSettings(); }}
                     />
                 ) : !isLoading && !apiError ? (
                     <div className="space-y-6">
@@ -348,7 +384,7 @@ const App: React.FC = () => {
                             <div>
                                 <p className="font-semibold">Horario de Solicitudes:</p>
                                 <p>Lunes 7:00 AM - Viernes 12:00 PM.</p>
-                                <p className="mt-1 font-semibold text-blue-900">Límite por persona: {MAX_SLOTS_PER_PERSON} turnos.</p>
+                                <p className="mt-1 font-semibold text-blue-900">Límite para próxima semana: {nextWeekSlotsLimit} turnos.</p>
                                 {!isBookingWindowOpen() && (
                                     <p className="text-red-600 font-bold mt-1 uppercase">
                                         Actualmente fuera de horario para nuevas solicitudes.

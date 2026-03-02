@@ -15,12 +15,35 @@ interface AdminPanelProps {
 const formatDate = (date: Date) => date.toISOString().split('T')[0];
 const getDayLabel = (date: Date) => date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
 
+const parseIsoDateLocal = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+};
+
+const getMondayLocal = (inputDate: Date) => {
+    const date = new Date(inputDate);
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+    date.setDate(diff);
+    date.setHours(0, 0, 0, 0);
+    return date;
+};
+
+const isDateInNextWeek = (dateStr: string) => {
+    const targetWeekStart = getMondayLocal(parseIsoDateLocal(dateStr));
+    const nextWeekStart = getMondayLocal(new Date());
+    nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+    return targetWeekStart.getTime() === nextWeekStart.getTime();
+};
+
 const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout }) => {
     // Only authenticated admins can access this component, so isAdmin is always true
     const isAdmin = true;
 
     const [notificationEmail, setNotificationEmail] = useState('');
     const [notificationStatus, setNotificationStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+    const [nextWeekSlotsLimit, setNextWeekSlotsLimit] = useState(6);
+    const [limitSaveStatus, setLimitSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
     const [emailCopied, setEmailCopied] = useState(false);
     const [blockLoading, setBlockLoading] = useState(false);
     const [editLoading, setEditLoading] = useState(false);
@@ -53,7 +76,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
     const userEmails = useMemo(() => {
         const emailSet = new Set<string>();
         bookings.forEach(b => {
-            if (b.status !== 'blocked' && b.userEmail) {
+            if ((b.status === 'pending' || b.status === 'approved') && b.userEmail && isDateInNextWeek(b.date)) {
                 emailSet.add(b.userEmail.trim());
             }
         });
@@ -67,16 +90,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             try {
                 const settings = await api.getAdminSettings();
                 setNotificationEmail(settings.notificationEmail);
+                setNextWeekSlotsLimit(settings.nextWeekSlotsLimit);
             } catch (error) {
                 console.error('Error loading settings:', error);
             }
         })();
     }, []);
 
+    const handleSaveNextWeekLimit = async () => {
+        if (!Number.isInteger(nextWeekSlotsLimit) || nextWeekSlotsLimit < 1 || nextWeekSlotsLimit > 50) {
+            alert('El límite debe ser un número entero entre 1 y 50.');
+            return;
+        }
+
+        setLimitSaveStatus('saving');
+        try {
+            await api.saveAdminSettings({ nextWeekSlotsLimit });
+            setLimitSaveStatus('saved');
+            setTimeout(() => setLimitSaveStatus('idle'), 3000);
+        } catch (error) {
+            setLimitSaveStatus('idle');
+            alert('Error al guardar el límite: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        }
+    };
+
     const handleStatusChange = async (bookingId: string, newStatus: 'approved' | 'available' | 'blocked') => {
         try {
             if (newStatus === 'available') {
-                await api.deleteBooking(bookingId);
+                await api.updateBookingStatus(bookingId, 'available');
             } else {
                 await api.updateBookingStatus(bookingId, newStatus);
             }
@@ -389,12 +430,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
 
         const confirmMessage = editingBooking.status === 'blocked'
             ? "¿Desea desbloquear este horario y eliminar la restricción?"
-            : `¿Está seguro de eliminar la reserva de ${editingBooking.userName}? Esta acción no se puede deshacer.`;
+            : `¿Está seguro de liberar el turno de ${editingBooking.userName}? Esta acción no se puede deshacer.`;
 
         if (window.confirm(confirmMessage)) {
             setEditLoading(true);
             try {
-                await api.deleteBooking(editingBooking.id);
+                if (editingBooking.status === 'blocked') {
+                    await api.deleteBooking(editingBooking.id);
+                } else {
+                    await api.updateBookingStatus(editingBooking.id, 'available');
+                }
                 setEditingBooking(null);
                 await refreshData();
             } catch (error) {
@@ -631,6 +676,36 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                 {/* Controls */}
                 <div className="space-y-8">
 
+                    {/* Next Week Booking Limit */}
+                    <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
+                        <h3 className="text-lg font-semibold mb-3 text-slate-700">Límite de Turnos (Próxima Semana)</h3>
+                        <div className="space-y-3">
+                            <p className="text-sm text-slate-600">
+                                Este límite se aplica solo a solicitudes para la próxima semana y no cuenta turnos de la semana actual.
+                            </p>
+                            <div>
+                                <label className="block text-sm mb-1 text-slate-600">Cantidad máxima por persona</label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={50}
+                                    value={nextWeekSlotsLimit}
+                                    onChange={e => setNextWeekSlotsLimit(Number(e.target.value))}
+                                    className={inputClasses}
+                                />
+                            </div>
+                            <button
+                                onClick={handleSaveNextWeekLimit}
+                                disabled={limitSaveStatus === 'saving'}
+                                className={`w-full py-2 rounded text-white transition ${limitSaveStatus === 'saved' ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-700'} disabled:opacity-50`}
+                            >
+                                {limitSaveStatus === 'idle' && 'Guardar Límite'}
+                                {limitSaveStatus === 'saving' && 'Guardando...'}
+                                {limitSaveStatus === 'saved' && 'Guardado'}
+                            </button>
+                        </div>
+                    </div>
+
                     {/* Notifications */}
                     {/* <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
                         <h3 className="text-lg font-semibold mb-3 text-slate-700">Sistema de Notificaciones</h3>
@@ -658,10 +733,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
 
                     {/* Email List */}
                     <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
-                        <h3 className="text-lg font-semibold mb-3 text-slate-700">Lista de Correos</h3>
+                        <h3 className="text-lg font-semibold mb-3 text-slate-700">Lista de Correos (Próxima Semana)</h3>
                         <div className="space-y-3">
                             <p className="text-sm text-slate-600">
-                                Correos de solicitantes registrados ({userEmails.length}):
+                                Correos de solicitantes registrados para la próxima semana ({userEmails.length}):
                             </p>
                             <div className="bg-white border border-slate-300 rounded p-3 max-h-32 overflow-y-auto">
                                 {userEmails.length > 0 ? (
@@ -1032,7 +1107,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                     className="text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-2 rounded transition-colors text-sm font-medium flex items-center gap-1 disabled:opacity-50"
                                 >
                                     <Trash2 className="w-4 h-4" />
-                                    {editLoading ? 'Procesando...' : (editingBooking.status === 'blocked' ? 'Desbloquear' : 'Eliminar Reserva')}
+                                    {editLoading ? 'Procesando...' : (editingBooking.status === 'blocked' ? 'Desbloquear' : 'Liberar Turno')}
                                 </button>
 
                                 <div className="flex gap-2">
