@@ -9,7 +9,7 @@ if (!process.env.DATABASE_URL) {
 const sql = neon(process.env.DATABASE_URL);
 
 const DEFAULT_NEXT_WEEK_SLOTS_LIMIT = 6;
-const RATE_LIMIT_WINDOW_MS = 3600000; // 1 hour
+const RATE_LIMIT_WINDOW_MS = 3600000; // 1 hora
 const RATE_LIMIT_MAX_INSERTS = 20;
 
 function parseIsoDateToUtc(date: string): Date {
@@ -19,7 +19,7 @@ function parseIsoDateToUtc(date: string): Date {
 
 function getMondayUtc(date: Date): Date {
     const monday = new Date(date);
-    const day = monday.getUTCDay(); // 0 Sun, 1 Mon, ... 6 Sat
+    const day = monday.getUTCDay(); // 0 domingo, 1 lunes, ... 6 sabado
     const diffToMonday = day === 0 ? -6 : 1 - day;
     monday.setUTCDate(monday.getUTCDate() + diffToMonday);
     monday.setUTCHours(0, 0, 0, 0);
@@ -109,8 +109,12 @@ function camelToSnake(obj: ApiBooking) {
 }
 
 function getCorsHeaders() {
+    // En desarrollo permitimos cualquier origen; en produccion respetamos ALLOWED_ORIGIN
+    const isDev = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
+    const allowedOrigin = isDev ? '*' : (process.env.ALLOWED_ORIGIN || '*');
+
     return {
-        'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || '*',
+        'Access-Control-Allow-Origin': allowedOrigin,
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Content-Type': 'application/json',
@@ -118,7 +122,7 @@ function getCorsHeaders() {
 }
 
 const handler: Handler = async (event, context) => {
-    // Handle CORS preflight
+    // Respuesta para preflight CORS (peticion OPTIONS)
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
@@ -129,7 +133,7 @@ const handler: Handler = async (event, context) => {
 
     try {
         if (event.httpMethod === 'GET') {
-            // GET /bookings - Return all bookings
+            // GET /bookings: listar reservas
             const result = await sql`SELECT * FROM bookings ORDER BY created_at DESC`;
             const bookings = result.map((row) => snakeToCamel(row as any as DbBooking));
 
@@ -141,7 +145,7 @@ const handler: Handler = async (event, context) => {
         }
 
         if (event.httpMethod === 'POST') {
-            // POST /bookings - Create new booking
+            // POST /bookings: crear reserva
             if (!event.body) {
                 return {
                     statusCode: 400,
@@ -152,7 +156,7 @@ const handler: Handler = async (event, context) => {
 
             const booking: ApiBooking = JSON.parse(event.body);
 
-            // Validate required fields
+            // Validamos campos obligatorios
             if (!booking.id || !booking.date || booking.equipmentId === undefined || !booking.timeSlotId) {
                 return {
                     statusCode: 400,
@@ -161,7 +165,7 @@ const handler: Handler = async (event, context) => {
                 };
             }
 
-            // Validate status is one of allowed values
+            // Validamos que el estado este permitido
             const validStatuses = ['pending', 'approved', 'blocked'];
             if (!booking.status || !validStatuses.includes(booking.status)) {
                 return {
@@ -171,7 +175,7 @@ const handler: Handler = async (event, context) => {
                 };
             }
 
-            // Validate date format (YYYY-MM-DD)
+            // Validamos formato de fecha
             if (!/^\d{4}-\d{2}-\d{2}$/.test(booking.date)) {
                 return {
                     statusCode: 400,
@@ -180,12 +184,12 @@ const handler: Handler = async (event, context) => {
                 };
             }
 
-            // Security: Check authentication for blocked/approved status and block fields
+            // Seguridad: solo admin puede crear reservas con estados administrativos/bloqueos
             const authHeader = event.headers.authorization || event.headers.Authorization;
             const isAuthorized = await verifyAdminAuth(authHeader);
 
             if (!isAuthorized) {
-                // Without auth, only allow 'pending' status and no block fields
+                // Sin auth solo se acepta estado pending y sin campos de bloqueo
                 if (booking.status !== 'pending') {
                     return {
                         statusCode: 401,
@@ -202,15 +206,15 @@ const handler: Handler = async (event, context) => {
                 }
             }
 
-            // Generate timestamp server-side to prevent rate limit bypass
+            // Timestamp generado en servidor para evitar bypass de rate limit
             booking.timestamp = Date.now();
 
-            // Check if slot is already occupied by a non-available booking
+            // Verificamos si el slot ya esta ocupado por una reserva real
             const existingBooking = await sql`SELECT * FROM bookings WHERE equipment_id = ${booking.equipmentId} AND date = ${booking.date} AND time_slot_id = ${booking.timeSlotId}`;
 
             if (existingBooking.length > 0) {
                 const existing = existingBooking[0] as any;
-                // Only allow overwrite if existing status is 'available'
+                // Solo permitimos sobreescritura si era un placeholder available
                 if (existing.status !== 'available') {
                     return {
                         statusCode: 409,
@@ -220,7 +224,7 @@ const handler: Handler = async (event, context) => {
                 }
             }
 
-            // Enforce configurable next-week slots limit only for next-week bookings
+            // Aplicamos limite configurable solo para solicitudes de proxima semana
             if (booking.status === 'pending' && booking.userEmail) {
                 const bookingWeekStart = formatUtcDate(getMondayUtc(parseIsoDateToUtc(booking.date)));
                 const currentWeekStartDate = getMondayUtc(new Date());
@@ -260,7 +264,7 @@ const handler: Handler = async (event, context) => {
                 }
             }
 
-            // Rate limiting: max 20 inserts per email in last 1 hour (only for non-admin users)
+            // Rate limiting: maximo de solicitudes por correo en la ultima hora (solo usuarios no admin)
             if (booking.userEmail && booking.status === 'pending' && !isAuthorized) {
                 const oneHourAgo = Date.now() - RATE_LIMIT_WINDOW_MS;
                 const recentInserts = await sql`SELECT COUNT(*) as count FROM bookings WHERE user_email = ${booking.userEmail} AND timestamp > ${oneHourAgo}`;
@@ -277,11 +281,10 @@ const handler: Handler = async (event, context) => {
                 }
             }
 
-            // Insert or update booking (UPSERT to handle 'available' status entries)
+            // UPSERT: inserta o actualiza cuando existe id (caso placeholders available)
             const snake = camelToSnake(booking);
 
-            // If there's a conflict on ID, update only if the existing entry was 'available'
-            // Since we already checked above, we can safely use UPSERT here
+            // Ya validamos conflictos arriba, por eso este UPSERT es seguro
             await sql`
         INSERT INTO bookings (id, equipment_id, date, time_slot_id, status, user_name, user_email, user_group, blocked_reason, block_type, block_start_date, block_end_date, timestamp)
         VALUES (${snake.id}, ${snake.equipment_id}, ${snake.date}, ${snake.time_slot_id}, ${snake.status}, ${snake.user_name}, ${snake.user_email}, ${snake.user_group}, ${snake.blocked_reason}, ${snake.block_type}, ${snake.block_start_date}, ${snake.block_end_date}, ${snake.timestamp})

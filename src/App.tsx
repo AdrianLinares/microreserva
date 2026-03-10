@@ -6,20 +6,20 @@ import BookingModal from './components/BookingModal';
 import AdminPanel from './components/AdminPanel';
 import { User, Lock, Calendar, Clock, Filter, AlertCircle, Info, ChevronLeft, ChevronRight } from 'lucide-react';
 
-// Helpers
+// Utilidades de calendario y reglas de negocio
 const isBookingWindowOpen = () => {
     const now = new Date();
-    const day = now.getDay(); // 0 Sun, 1 Mon, ... 6 Sat
+    const day = now.getDay(); // 0 domingo, 1 lunes, ... 6 sabado
     const hour = now.getHours();
 
-    // Mon 7AM to Fri 12PM
-    // Sunday (0) or Saturday (6) -> Closed
+    // Ventana habilitada: lunes 07:00 a viernes 12:00
+    // Fin de semana: no se reciben solicitudes
     if (day === 0 || day === 6) return false;
 
-    // Friday (5) after 12:00 -> Closed
+    // Viernes desde las 12:00: cerrado
     if (day === 5 && hour >= 12) return false;
 
-    // Monday (1) before 7:00 -> Closed
+    // Lunes antes de las 07:00: cerrado
     if (day === 1 && hour < 7) return false;
 
     return true;
@@ -52,7 +52,7 @@ const isDateInNextWeek = (dateStr: string) => {
 };
 
 const App: React.FC = () => {
-    // Global State
+    // Estado global de la pantalla principal
     const [isAdmin, setIsAdmin] = useState(false);
     const [showAdminLogin, setShowAdminLogin] = useState(false);
     const [bookings, setBookings] = useState<Booking[]>([]);
@@ -60,16 +60,16 @@ const App: React.FC = () => {
     const [apiError, setApiError] = useState<string | null>(null);
     const [nextWeekSlotsLimit, setNextWeekSlotsLimit] = useState(DEFAULT_NEXT_WEEK_SLOTS_LIMIT);
 
-    // Week Navigation State
+    // Estado de navegacion por semana
     const [weekOffset, setWeekOffset] = useState(0);
     const weekDays = useMemo(() => generateWeekDays(weekOffset), [weekOffset]);
-    // Removed activeDayIndex state as we show all days now
+    // Ya no usamos activeDayIndex porque la UI muestra todos los dias
 
-    // Filter State
+    // Estado de filtros de equipos
     const [filterType, setFilterType] = useState<'all' | 'Microscopio' | 'Estereomicroscopio'>('all');
     const [filterBrand, setFilterBrand] = useState<'all' | 'ZEISS' | 'OLYMPUS'>('all');
 
-    // Booking Flow State
+    // Estado del flujo de reserva y login admin
     const [selectedSlots, setSelectedSlots] = useState<Array<{ date: string, equipmentId: number, timeSlotId: string }>>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [loginUsername, setLoginUsername] = useState('');
@@ -78,7 +78,7 @@ const App: React.FC = () => {
     const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
     const isSyncingRef = useRef(false);
 
-    // Async refresh data helper
+    // Helper para refrescar reservas desde backend
     const refreshData = useCallback(async () => {
         try {
             setApiError(null);
@@ -100,7 +100,7 @@ const App: React.FC = () => {
         }
     }, []);
 
-    // Initial Load
+    // Carga inicial al abrir la aplicacion
     useEffect(() => {
         (async () => {
             try {
@@ -111,7 +111,7 @@ const App: React.FC = () => {
         })();
     }, [refreshData, loadPublicSettings]);
 
-    // Keep data fresh when the app is restored/opened from bookmark or tab focus
+    // Sincroniza datos cuando se vuelve a enfocar la pestana o se restaura desde cache del navegador
     useEffect(() => {
         const syncLatestData = async () => {
             if (isSyncingRef.current) return;
@@ -150,7 +150,7 @@ const App: React.FC = () => {
         };
     }, [refreshData, loadPublicSettings]);
 
-    // Live refresh while app is open (multi-user updates)
+    // Refresco periodico para reflejar cambios hechos por otros usuarios
     useEffect(() => {
         const intervalId = window.setInterval(() => {
             if (document.visibilityState !== 'visible') return;
@@ -168,7 +168,7 @@ const App: React.FC = () => {
         };
     }, [refreshData, loadPublicSettings]);
 
-    // Filtering Equipment
+    // Lista visible de equipos segun filtros
     const visibleEquipment = useMemo(() => {
         return EQUIPMENT_LIST.filter(eq => {
             if (filterType !== 'all' && eq.type !== filterType) return false;
@@ -177,7 +177,7 @@ const App: React.FC = () => {
         });
     }, [filterType, filterBrand]);
 
-    // Optimized booking lookup map
+    // Mapa para busqueda O(1) por slot: evita recorrer todas las reservas en cada celda
     const bookingMap = useMemo(() => {
         const map = new Map<string, Booking>();
         bookings.forEach(b => {
@@ -186,7 +186,7 @@ const App: React.FC = () => {
         return map;
     }, [bookings]);
 
-    // Derived Bookings for efficient lookup
+    // Funcion de lectura del mapa por slot
     const getBookingForSlot = (eqId: number, timeId: string, date: string) => {
         return bookingMap.get(`${date}-${eqId}-${timeId}`);
     };
@@ -195,7 +195,7 @@ const App: React.FC = () => {
         return selectedSlots.some(s => s.equipmentId === eqId && s.timeSlotId === timeId && s.date === date);
     };
 
-    // Check if a slot is blocked indefinitely
+    // Bloqueo indefinido: aplica desde una fecha hacia adelante
     const isSlotBlockedIndefinitely = (eqId: number, date: string) => {
         return bookings.some(b =>
             b.blockType === 'indefinite' &&
@@ -205,36 +205,36 @@ const App: React.FC = () => {
         );
     };
 
-    // Interactions
+    // Interacciones del usuario sobre la grilla
     const handleSlotClick = (eqId: number, timeId: string, date: string) => {
-        if (isAdmin) return; // Admin views status but edits via panel
+        if (isAdmin) return; // Admin ve la grilla, pero edita desde su panel
 
         const existingBooking = getBookingForSlot(eqId, timeId, date);
 
-        // 1. Check for indefinite blocks
+        // 1) Primero validamos bloqueos indefinidos
         if (isSlotBlockedIndefinitely(eqId, date)) {
             alert("Este equipo está bloqueado indefinidamente. Por favor contacte al administrador.");
             return;
         }
 
-        // 2. If it's blocked, unavailable, pending, or approved -> Can't touch
+        // 2) Si ya existe reserva o bloqueo, no permitimos seleccion
         if (existingBooking) {
-            // Optional: Show details if user wants to see who booked it (per requirements)
+            // Solo reservas "available" pueden convertirse en seleccion del usuario
             if (existingBooking.status !== 'available') return;
         }
 
-        // 3. Check Booking Window
+        // 3) Validamos ventana horaria habilitada
         if (!isBookingWindowOpen()) {
             alert("Las solicitudes de turnos solo están disponibles desde el lunes 7:00 AM hasta el viernes 12:00 PM.");
             return;
         }
 
-        // 4. Toggle Selection
+        // 4) Toggle de seleccion del slot
         const isSelected = isSlotSelected(eqId, timeId, date);
         if (isSelected) {
             setSelectedSlots(prev => prev.filter(s => !(s.equipmentId === eqId && s.timeSlotId === timeId && s.date === date)));
         } else {
-            // Check next-week limit only for slots in next week
+            // El limite configurable aplica solo para la proxima semana
             if (isDateInNextWeek(date)) {
                 const selectedNextWeekCount = selectedSlots.filter(slot => isDateInNextWeek(slot.date)).length;
                 if (selectedNextWeekCount >= nextWeekSlotsLimit) {
@@ -248,7 +248,7 @@ const App: React.FC = () => {
 
     const handleBookingSubmit = async (userData: { name: string; email: string; group: string }) => {
 
-        // Enforce only next-week limit (do not count current week bookings)
+        // Limite: contamos solo reservas activas de la proxima semana
         const activeNextWeekBookingsCount = bookings.filter(b =>
             b.userEmail === userData.email &&
             b.userName &&
@@ -266,7 +266,7 @@ const App: React.FC = () => {
         const newBookings: Booking[] = [];
         const timestamp = Date.now();
 
-        // We assume validation happened in modal
+        // En este punto, el modal ya valido nombre/correo/grupo
         selectedSlots.forEach(slot => {
             const id = `${slot.date}-${slot.equipmentId}-${slot.timeSlotId}`;
             newBookings.push({
@@ -305,7 +305,7 @@ const App: React.FC = () => {
 
         try {
             saveAdminCredentials(loginUsername, loginPassword);
-            // Verify credentials by calling getAdminSettings
+            // Validamos credenciales llamando un endpoint protegido
             await getAdminSettings();
             setIsAdmin(true);
             setShowAdminLogin(false);
@@ -320,7 +320,7 @@ const App: React.FC = () => {
         }
     };
 
-    // Render Helpers
+    // Helpers de render para colores/estilos
     const getCellColor = (status: BookingStatus | undefined, isSelected: boolean) => {
         if (isSelected) return 'bg-blue-600 text-white ring-2 ring-blue-400';
         switch (status) {
@@ -332,13 +332,13 @@ const App: React.FC = () => {
         }
     };
 
-    // Common classes for inputs
+    // Clases reutilizables para mantener consistencia visual
     const selectClasses = "bg-white border border-slate-300 text-slate-700 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
     const loginInputClasses = "w-full px-3 py-2 bg-white border border-slate-300 rounded mb-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-slate-400";
 
     return (
         <div className="min-h-screen flex flex-col font-sans bg-slate-50">
-            {/* Header */}
+            {/* Encabezado principal */}
             <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-40">
                 <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
                     <div>
@@ -366,7 +366,7 @@ const App: React.FC = () => {
                 </div>
             </header>
 
-            {/* Admin Login Modal (Simple overlay) */}
+            {/* Modal de acceso admin */}
             {showAdminLogin && !isAdmin && (
                 <div className="fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center p-4">
                     <form onSubmit={handleLogin} className="bg-white p-6 rounded shadow-xl w-full max-w-sm animate-fade-in">
@@ -399,18 +399,18 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            {/* Main Content */}
+            {/* Contenido principal */}
             <main className="flex-grow container mx-auto p-4 md:p-6">
 
                 {isLoading ? (
-                    // Loading skeleton
+                    // Esqueleto de carga
                     <div className="space-y-4">
                         <div className="h-20 bg-slate-200 rounded animate-pulse"></div>
                         <div className="h-96 bg-slate-200 rounded animate-pulse"></div>
                         <div className="h-96 bg-slate-200 rounded animate-pulse"></div>
                     </div>
                 ) : apiError ? (
-                    // Error banner
+                    // Banner de error con opcion de reintento
                     <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded shadow-sm flex items-start justify-between">
                         <div className="flex items-start gap-3">
                             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
@@ -437,7 +437,7 @@ const App: React.FC = () => {
                 ) : !isLoading && !apiError ? (
                     <div className="space-y-6">
 
-                        {/* Info Bar */}
+                        {/* Barra informativa de reglas y uso */}
                         <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded shadow-sm text-sm text-blue-800 flex items-start gap-3">
                             <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
                             <div>
@@ -462,10 +462,10 @@ const App: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Filters and Week Navigation */}
+                        {/* Filtros y navegacion semanal */}
                         <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded shadow-sm border border-slate-100">
 
-                            {/* Week Navigation */}
+                            {/* Selector de semana */}
                             <div className="flex items-center bg-slate-100 rounded-lg p-1">
                                 <button
                                     onClick={() => { setWeekOffset(0); }}
@@ -509,7 +509,7 @@ const App: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Calendar Grids - All Days */}
+                        {/* Grilla de calendario para todos los dias */}
                         <div className="space-y-8">
                             {weekDays.map((day, dayIndex) => {
                                 const dayStr = formatDate(day);
@@ -544,7 +544,7 @@ const App: React.FC = () => {
                                                 </thead>
                                                 <tbody>
                                                     {TIME_SLOTS.map((slot) => {
-                                                        // Visual separators for the 12:00-1:00 PM block
+                                                        // Separador visual para el bloque de mediodia
                                                         let rowClasses = "border-b border-r p-2 h-16 relative transition-all ";
 
                                                         if (slot.id === '12:00') rowClasses += "border-t-[3px] border-t-slate-300 ";
@@ -608,7 +608,7 @@ const App: React.FC = () => {
                 ) : null}
             </main>
 
-            {/* Booking Floating Action Button */}
+            {/* Boton flotante para enviar solicitud */}
             {selectedSlots.length > 0 && (
                 <div className="fixed bottom-6 right-6 z-50 animate-bounce-small">
                     <button
@@ -623,7 +623,7 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            {/* Booking Modal */}
+            {/* Modal de solicitud de turnos */}
             <BookingModal
                 isOpen={isModalOpen}
                 selectedCount={selectedSlots.length}

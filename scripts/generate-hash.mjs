@@ -19,17 +19,17 @@ async function generateHash() {
   console.log('\n=== Generador de Hash de Contraseña ===\n');
   
   try {
-    // Prompt for password
+    // 1) Pedimos password por terminal
     const password = await prompt('Ingrese la contraseña del administrador: ');
     
-    // Validate minimum length
+    // 2) Validamos longitud minima para evitar contraseñas debiles
     if (password.length < 8) {
       console.error('❌ Error: La contraseña debe tener al menos 8 caracteres.');
       rl.close();
       process.exit(1);
     }
     
-    // Confirm password
+    // 3) Confirmamos para reducir errores de tipeo
     const confirmPassword = await prompt('Confirme la contraseña: ');
     
     if (password !== confirmPassword) {
@@ -38,7 +38,7 @@ async function generateHash() {
       process.exit(1);
     }
     
-    // Generate hash with bcryptjs
+    // 4) Generamos hash bcrypt (cost factor 12)
     console.log('\nGenerando hash con bcryptjs (cost factor: 12)...');
     const hash = await bcrypt.hash(password, 12);
     

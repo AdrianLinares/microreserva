@@ -1,102 +1,66 @@
-# Release Checklist v1.0.0
+# Release Checklist
 
-Preparación para formalización y release a producción.
+Usa este checklist antes de publicar cambios a produccion.
 
-## ✅ Requisitos completados
+## 1. Pre-check tecnico
 
-### Funcionalidad
+- [ ] npm install ejecutado sin errores.
+- [ ] npm run build compila correctamente.
+- [ ] No hay errores TypeScript relevantes.
+- [ ] Variables de entorno locales configuradas.
 
-- [x] Sistema de límite configurable de turnos por semana
-- [x] Captura limpia de correos (solo próxima semana)
-- [x] Refresco automático en tiempo real (polling 15s + auto-sync)
-- [x] Liberación/rechazo de turnos funcional
-- [x] Gestión de bloques indefinidos
-- [x] Exportación a PDF del calendario
-- [x] Validación de horas de solicitud (Mon 7AM - Fri 12PM)
+## 2. Validacion funcional minima
 
-### Seguridad
+- [ ] Usuario puede solicitar turno en ventana habilitada.
+- [ ] Usuario no puede solicitar fuera de ventana.
+- [ ] Limite de proxima semana se respeta.
+- [ ] Admin puede aprobar una solicitud.
+- [ ] Admin puede liberar/rechazar una solicitud.
+- [ ] Admin puede mover una reserva a otro slot.
+- [ ] Admin puede intercambiar dos reservas.
+- [ ] Admin puede aplicar bloqueo simple/rango/indefinido.
+- [ ] Vista admin muestra cambios en la grilla.
 
-- [x] Auth con Basic Auth + bcryptjs
-- [x] CORS configurable
-- [x] Validaciones en backend (no confiar en cliente)
-- [x] Rate limiting (max 20 inserts/hora por usuario)
-- [x] 0 vulnerabilidades de npm audit en producción
-- [x] Environment variables protegidas en .env (excluido de git)
+## 3. Seguridad y backend
 
-### Performance
+- [ ] Endpoint admin rechaza requests sin Authorization.
+- [ ] ADMIN_USERS tiene JSON valido.
+- [ ] DATABASE_URL apunta a la base correcta.
+- [ ] CORS en produccion tiene ALLOWED_ORIGIN correcto.
 
-- [x] No-store cache en GET requests (datos frescos)
-- [x] Polling adaptativo (respeta visibilidad de pestaña)
-- [x] Memoización en hooks que corresponde
-- [x] Build exitoso sin errores (Vite 5.2s)
+## 4. Datos y observabilidad
 
-### Código
+- [ ] schema.sql aplicado (si hubo cambios de base).
+- [ ] Logs de Netlify Functions sin errores inesperados.
+- [ ] No hay errores 500 en flujo basico.
 
-- [x] TypeScript con tipos balanceados
-- [x] Eliminación de código muerto (MAX_SLOTS_PER_PERSON sin usar)
-- [x] Eliminación de mock console.log
-- [x] Clean code: nombres claros y funciones cohesivas
-- [x] Manejo de errores en API calls
-- [x] Try-catch en operaciones críticas
+## 5. Documentacion obligatoria
 
-### Infraestructura
+- [ ] README actualizado si cambio flujo o variables.
+- [ ] ESTRUCTURA actualizado si cambio arquitectura.
+- [ ] CHANGELOG actualizado con cambios visibles.
+- [ ] Comentarios de codigo nuevos claros y consistentes.
 
-- [x] Netlify Functions configurado
-- [x] PostgreSQL (Neon) integrado
-- [x] Schema SQL con índices correctos
-- [x] Environment en Netlify config (ADMIN_USERS, DATABASE_URL, etc.)
+## 6. Publicacion
 
-### Documentación
+1. Confirmar rama y estado de git.
+2. Crear commit con mensaje claro.
+3. Push al repositorio remoto.
+4. Verificar build en Netlify.
+5. Ejecutar smoke test en URL publicada.
 
-- [x] CHANGELOG completo
-- [x] .env.example documentado
-- [x] Tipos TypeScript explícitos
-- [x] Comentarios en funciones complejas
+## 7. Smoke test post-deploy
 
-## 🚀 Deploy a producción
+- [ ] Carga inicial sin pantalla en blanco.
+- [ ] Lista de reservas visible.
+- [ ] Login admin funciona.
+- [ ] Crear/aprobar/rechazar reserva funciona.
+- [ ] No hay errores CORS en consola.
 
-1. **Variables de entorno en Netlify**:
-   ```
-   DATABASE_URL=postgresql://...
-   ADMIN_USERS=[{"username":"admin","passwordHash":"..."}]
-   ALLOWED_ORIGIN=https://tu-dominio.com
-   VITE_API_URL=/.netlify/functions (opcional)
-   ```
+## Variables de entorno minimas (produccion)
 
-2. **Generar hash admin**:
-   ```bash
-   npm run generate-hash
-   ```
-
-3. **Push a repositorio**:
-   ```bash
-   git add .
-   git commit -m "chore: formalize v1.0.0"
-   git push origin main
-   ```
-
-4. **Verificar deployment en Netlify**:
-   - Build exitoso
-   - Función serverless correctas
-   - Variables de entorno presentes
-   - Test de login admin
-   - Test de crear/rechazar reserva
-
-## 📋 Test manual checklist
-
-- [ ] Usuario puede solicitar turno en ventana válida
-- [ ] Usuario no puede solicitar más de [límite] en próxima semana
-- [ ] Admin puede ver solicitudes pendientes
-- [ ] Admin puede aprobar solicitud
-- [ ] Admin puede rechazar solicitud (libera turno)
-- [ ] Admin puede cambiar límite semanal
-- [ ] Cambio de límite se refleja en UI usuario
-- [ ] Correos se actualizan solo con próxima semana
-- [ ] Abrir app desde bookmark muestra datos recientes
-- [ ] Cambios de otro usuario aparecen en 15s
-- [ ] Exportación PDF funciona sin errores
-
-## 🎉 Status: READY FOR PRODUCTION
-
-Fecha de revisión: 2 Marzo 2026
-Estado: ✅ Completado y validado
+```env
+DATABASE_URL=postgresql://...
+ADMIN_USERS=[{"username":"admin","passwordHash":"..."}]
+ALLOWED_ORIGIN=https://tu-dominio.netlify.app
+```

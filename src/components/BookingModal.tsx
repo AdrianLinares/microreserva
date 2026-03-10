@@ -6,7 +6,7 @@ interface BookingModalProps {
     onClose: () => void;
     onSubmit: (data: { name: string; email: string; group: string }) => void;
     selectedCount: number;
-    sampleEquipment?: Equipment; // Just for display context
+    sampleEquipment?: Equipment; // Referencia visual para que el usuario confirme que equipo esta reservando
 }
 
 const BookingModal: React.FC<BookingModalProps> = ({
@@ -24,7 +24,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
     if (!isOpen) return null;
 
     const handleClose = () => {
-        // Reset form when closing
+        // Limpiamos el formulario para que al reabrir no queden datos viejos
         setName('');
         setEmail('');
         setGroup('');
@@ -47,7 +47,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
         }
 
         onSubmit({ name, email, group });
-        // Reset form
+        // Limpiamos campos despues de enviar para evitar reuso accidental
         setName('');
         setEmail('');
         setGroup('');

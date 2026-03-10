@@ -19,8 +19,12 @@ interface UpdateDetailsPayload {
 }
 
 function getCorsHeaders() {
+    // En desarrollo permitimos cualquier origen; en produccion usamos ALLOWED_ORIGIN
+    const isDev = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
+    const allowedOrigin = isDev ? '*' : (process.env.ALLOWED_ORIGIN || '*');
+
     return {
-        'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || '*',
+        'Access-Control-Allow-Origin': allowedOrigin,
         'Access-Control-Allow-Methods': 'PUT, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Content-Type': 'application/json',
@@ -28,7 +32,7 @@ function getCorsHeaders() {
 }
 
 const handler: Handler = async (event, context) => {
-    // Handle CORS preflight
+    // Respuesta al preflight CORS
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
@@ -38,7 +42,7 @@ const handler: Handler = async (event, context) => {
     }
 
     try {
-        // Verify admin auth for all methods
+        // Este endpoint es solo admin: validamos auth al inicio
         const authHeader = event.headers.authorization || event.headers.Authorization;
         const isAuthorized = await verifyAdminAuth(authHeader);
 
@@ -71,12 +75,12 @@ const handler: Handler = async (event, context) => {
 
             const body = JSON.parse(event.body);
 
-            // Check if this is a status update or details update
+            // Este PUT soporta dos casos: cambio de estado o cambio de slot
             if (body.status) {
-                // Update status only
+                // Caso 1: actualizar solo estado
                 const statusPayload = body as UpdateStatusPayload;
 
-                // Validate status value
+                // Validacion de estado permitido
                 const validStatuses = ['pending', 'approved', 'blocked', 'available'];
                 if (!validStatuses.includes(statusPayload.status)) {
                     return {
@@ -96,11 +100,11 @@ const handler: Handler = async (event, context) => {
             }
 
             if (body.date && body.equipmentId !== undefined && body.timeSlotId) {
-                // Update details (date, equipmentId, timeSlotId)
+                // Caso 2: mover reserva a nueva fecha/equipo/horario
                 const detailsPayload = body as UpdateDetailsPayload;
                 const newId = `${detailsPayload.date}-${detailsPayload.equipmentId}-${detailsPayload.timeSlotId}`;
 
-                // Check if new ID already exists (collision check)
+                // Verificamos colision de id en el nuevo slot
                 if (newId !== bookingId) {
                     const collision =
                         await sql`SELECT * FROM bookings WHERE id = ${newId}`;
@@ -113,7 +117,7 @@ const handler: Handler = async (event, context) => {
                         };
                     }
 
-                    // Update the booking with new slot details and new ID
+                    // Actualizamos id y campos del slot
                     await sql`UPDATE bookings 
             SET id = ${newId}, 
                 date = ${detailsPayload.date}, 
@@ -121,7 +125,7 @@ const handler: Handler = async (event, context) => {
                 time_slot_id = ${detailsPayload.timeSlotId}
             WHERE id = ${bookingId}`;
                 } else {
-                    // ID didn't change, but update the fields anyway
+                    // Si el id no cambia, igual actualizamos campos editables
                     await sql`UPDATE bookings 
             SET date = ${detailsPayload.date}, 
                 equipment_id = ${detailsPayload.equipmentId}, 

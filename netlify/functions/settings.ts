@@ -16,8 +16,12 @@ interface SettingsPayload {
 const DEFAULT_NEXT_WEEK_SLOTS_LIMIT = 6;
 
 function getCorsHeaders() {
+    // En desarrollo permitimos cualquier origen; en produccion usamos ALLOWED_ORIGIN
+    const isDev = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
+    const allowedOrigin = isDev ? '*' : (process.env.ALLOWED_ORIGIN || '*');
+
     return {
-        'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || '*',
+        'Access-Control-Allow-Origin': allowedOrigin,
         'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Content-Type': 'application/json',
@@ -25,7 +29,7 @@ function getCorsHeaders() {
 }
 
 const handler: Handler = async (event, context) => {
-    // Handle CORS preflight
+    // Respuesta al preflight CORS
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,

@@ -37,7 +37,7 @@ const isDateInNextWeek = (dateStr: string) => {
 };
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout }) => {
-    // Only authenticated admins can access this component, so isAdmin is always true
+    // Este componente solo se monta tras login admin exitoso
     const isAdmin = true;
 
     const [notificationEmail, setNotificationEmail] = useState('');
@@ -48,24 +48,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
     const [blockLoading, setBlockLoading] = useState(false);
     const [editLoading, setEditLoading] = useState(false);
 
-    // State for blocking
+    // Estado del formulario de bloqueos
     const [blockReason, setBlockReason] = useState('Mantenimiento');
     const [blockType, setBlockType] = useState<'single' | 'range' | 'indefinite'>('single');
     const [blockStartDate, setBlockStartDate] = useState('');
     const [blockEndDate, setBlockEndDate] = useState('');
     const [blockEquipmentId, setBlockEquipmentId] = useState<number | 'all'>('all');
 
-    // State for editing
+    // Estado del modal de edicion/intercambio
     const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
     const [editForm, setEditForm] = useState({ date: '', equipmentId: 0, timeSlotId: '' });
     const [swapTargetId, setSwapTargetId] = useState('');
 
-    // State for admin booking
+    // Estado para crear reservas desde admin en slots vacios
     const [selectedAdminSlots, setSelectedAdminSlots] = useState<Array<{ date: string; equipmentId: number; timeSlotId: string }>>([]);
     const [adminBookingModalOpen, setAdminBookingModalOpen] = useState(false);
     const [adminBookingLoading, setAdminBookingLoading] = useState(false);
 
-    // State for Calendar Preview
+    // Estado de vista previa de calendario y exportacion PDF
     const [weekOffset, setWeekOffset] = useState(0);
     const weekDays = useMemo(() => api.generateWeekDays(weekOffset), [weekOffset]);
     const calendarRef = useRef<HTMLDivElement>(null);
@@ -135,7 +135,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
 
         setNotificationStatus('sending');
         try {
-            // Save email for next time
+            // Guardamos correo para precargar el formulario en futuras sesiones
             await api.saveAdminSettings({ notificationEmail });
             setNotificationStatus('sent');
             setTimeout(() => setNotificationStatus('idle'), 3000);
@@ -164,14 +164,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             const weekEnd = formatDate(weekDays[weekDays.length - 1]);
             const fileName = `Turnos_Sala_Petrografia_${weekStart}_${weekEnd}.pdf`;
 
-            // Construir HTML manualmente con los datos
+            // Construimos HTML manual para exportar un PDF estable y controlado
             let tableRows = '';
 
             for (const day of weekDays) {
                 const dayStr = formatDate(day);
                 const dayLabel = getDayLabel(day);
 
-                // Encabezado del día
+                // Fila de encabezado por cada dia
                 tableRows += `
                     <tr style="background-color: #e5e7eb; font-weight: bold;">
                         <td colspan="${EQUIPMENT_LIST.length + 1}" style="padding: 0 4px 4px 4px; font-size: 12px; border: 1px solid #999;">
@@ -180,38 +180,38 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                     </tr>
                 `;
 
-                // Filas de horarios
+                // Filas por horario dentro del dia
                 for (const slot of TIME_SLOTS) {
                     const isLunchBreak = slot.id === '12:00';
                     const rowStyle = isLunchBreak ? 'border-top: 1px solid #666;' : '';
 
                     tableRows += `<tr style="${rowStyle}">`;
 
-                    // Columna de horario
+                    // Primera columna: etiqueta de horario
                     tableRows += `
                         <td style="padding: 2px 2px 2px 2px; font-size: 12px; border: 1px solid #ccc; text-align: center; background-color: #f9fafb; font-weight: 400; width: 90px;">
                             ${slot.label}
                         </td>
                     `;
 
-                    // Columnas de equipos
+                    // Columnas por equipo
                     for (const eq of EQUIPMENT_LIST) {
                         const booking = getBookingForSlot(eq.id, slot.id, dayStr);
                         const indefiniteBlock = getIndefiniteBlockForSlot(eq.id, dayStr);
                         const displayBooking = indefiniteBlock || booking;
                         const status = indefiniteBlock ? 'blocked' : (booking ? booking.status : 'available');
 
-                        let bgColor = '#d1fae5'; // available (verde claro)
+                        let bgColor = '#d1fae5'; // available = verde claro
                         let content = '';
 
                         if (status === 'approved') {
-                            bgColor = '#dbeafe'; // azul claro
+                            bgColor = '#dbeafe'; // approved = azul claro
                             content = `<div style="font-size: 8px; text-align: center;"><strong>${displayBooking.userName || ''}</strong><br/><span style="font-size: 7px;">${displayBooking.userGroup || ''}</span></div>`;
                         } else if (status === 'pending') {
-                            bgColor = '#fef3c7'; // amarillo claro
+                            bgColor = '#fef3c7'; // pending = amarillo claro
                             content = `<div style="font-size: 8px; text-align: center;"><strong>${displayBooking.userName || ''}</strong><br/><span style="font-size: 7px;">${displayBooking.userGroup || ''}</span></div>`;
                         } else if (status === 'blocked') {
-                            bgColor = '#f3f4f6'; // gris claro
+                            bgColor = '#f3f4f6'; // blocked = gris claro
                             content = `<div style="font-size: 8px; text-align: center; color: #666;">🔒 ${displayBooking.blockedReason || 'Bloqueado'}</div>`;
                         }
 
@@ -289,7 +289,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
     };
 
     const handleBlockDay = async () => {
-        // Validate inputs based on block type
+        // Validaciones minimas segun el tipo de bloqueo seleccionado
         if (blockType === 'single' && !blockStartDate) {
             alert("Seleccione una fecha");
             return;
@@ -312,7 +312,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         let blockMessage = '';
 
         try {
-            // Helper function to get date range
+            // Helper: genera arreglo de fechas entre inicio y fin (incluyente)
             const getDateRange = (start: string, end: string): string[] => {
                 const dates: string[] = [];
                 const current = new Date(start);
@@ -325,7 +325,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                 return dates;
             };
 
-            // Get dates to block
+            // Calculamos las fechas afectadas por el bloqueo
             let datesToBlock: string[] = [];
             if (blockType === 'single') {
                 datesToBlock = [blockStartDate];
@@ -334,7 +334,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                 datesToBlock = getDateRange(blockStartDate, blockEndDate);
                 blockMessage = `Se bloqueó desde ${new Date(blockStartDate).toLocaleDateString('es-ES')} hasta ${new Date(blockEndDate).toLocaleDateString('es-ES')}`;
             } else if (blockType === 'indefinite') {
-                // For indefinite blocks, create a single "master" block with indefinite flag
+                // Para indefinido creamos un registro "maestro" con timeSlotId=all
                 const id = `indefinite-${blockStartDate}-${blockEquipmentId}-${timestamp}`;
                 try {
                     await api.addBooking({
@@ -358,7 +358,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                 blockMessage = `Se bloqueó indefinidamente a partir del ${new Date(blockStartDate).toLocaleDateString('es-ES')} (${blockEquipmentId === 'all' ? 'Todos los equipos' : 'Equipo seleccionado'})`;
             }
 
-            // Apply blocking for single and range blocks
+            // Para bloqueos single/range creamos una reserva bloqueada por cada slot
             if (blockType === 'single' || blockType === 'range') {
                 for (const dateStr of datesToBlock) {
                     for (const slot of TIME_SLOTS) {
@@ -393,7 +393,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             }
 
             alert(`${blockMessage}. Razón: ${blockReason}`);
-            // Reset form
+            // Dejamos el formulario listo para el siguiente bloqueo
             setBlockStartDate('');
             setBlockEndDate('');
             setBlockType('single');
@@ -406,7 +406,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         }
     };
 
-    // Edit Handlers
+    // Handlers de edicion individual
     const handleEditClick = (booking: Booking) => {
         setEditingBooking(booking);
         setEditForm({
@@ -498,7 +498,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         }
     };
 
-    // Admin Booking Handlers
+    // Handlers para crear reservas manuales desde admin
     const handleAdminSlotClick = (date: string, equipmentId: number, timeSlotId: string) => {
         const slotKey = `${date}-${equipmentId}-${timeSlotId}`;
         const isSelected = selectedAdminSlots.some(s => `${s.date}-${s.equipmentId}-${s.timeSlotId}` === slotKey);
@@ -518,7 +518,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             let successCount = 0;
 
             for (const slot of data.slots) {
-                // Verify slot is not occupied by a real booking
+                // Verificamos que el slot siga libre antes de crear la reserva
                 const existingBooking = getBookingForSlot(slot.equipmentId, slot.timeSlotId, slot.date);
                 const indefiniteBlock = getIndefiniteBlockForSlot(slot.equipmentId, slot.date);
 
@@ -530,7 +530,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                 try {
                     const bookingId = `${slot.date}-${slot.equipmentId}-${slot.timeSlotId}`;
 
-                    // Backend handles UPSERT - no need to delete 'available' entries manually
+                    // El backend usa UPSERT, no hace falta borrar "available" antes
                     await api.addBooking({
                         id: bookingId,
                         date: slot.date,
@@ -567,11 +567,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         }
     };
 
-    // Grid Helpers
+    // Helpers para leer y pintar la grilla de calendario
     const bookingMap = useMemo(() => {
         const map = new Map<string, Booking>();
         bookings.forEach(b => {
-            // Only include bookings that actually occupy the slot (not 'available')
+            // Ignoramos "available" porque no ocupan realmente el slot
             if (b.status !== 'available') {
                 map.set(`${b.date}-${b.equipmentId}-${b.timeSlotId}`, b);
             }
@@ -583,7 +583,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         return bookingMap.get(`${date}-${eqId}-${timeId}`);
     };
 
-    // Check if equipment is blocked indefinitely for a given date
+    // Busca si el equipo esta en bloqueo indefinido para la fecha indicada
     const getIndefiniteBlockForSlot = (eqId: number, date: string) => {
         return bookings.find(b =>
             b.blockType === 'indefinite' &&
@@ -599,7 +599,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             case 'pending': return 'bg-status-pending text-amber-900 border-amber-200 hover:bg-amber-300';
             case 'blocked': return 'bg-status-blocked text-gray-500 border-gray-300 hover:bg-gray-300';
             case 'available':
-            default: return 'bg-status-available text-green-900 border-green-200 opacity-60'; // Slightly clearer for admin that it is empty
+            default: return 'bg-status-available text-green-900 border-green-200 opacity-60'; // Mas evidente para admin que el slot esta libre
         }
     };
 
@@ -622,7 +622,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-                {/* Pending Requests */}
+                {/* Solicitudes pendientes */}
                 <div>
                     <h3 className="text-lg font-semibold mb-4 text-amber-600">Solicitudes Pendientes ({pendingBookings.length})</h3>
                     <div className="space-y-3 max-h-[500px] overflow-y-auto">
@@ -670,10 +670,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                     </div>
                 </div>
 
-                {/* Controls */}
+                {/* Controles administrativos */}
                 <div className="space-y-8">
 
-                    {/* Next Week Booking Limit */}
+                    {/* Limite de turnos para proxima semana */}
                     <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
                         <h3 className="text-lg font-semibold mb-3 text-slate-700">Límite de Turnos (Próxima Semana)</h3>
                         <div className="space-y-3">
@@ -703,7 +703,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                         </div>
                     </div>
 
-                    {/* Notifications */}
+                    {/* Notificaciones (actualmente desactivadas) */}
                     {/* <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
                         <h3 className="text-lg font-semibold mb-3 text-slate-700">Sistema de Notificaciones</h3>
                         <div className="flex flex-col gap-3">
@@ -728,7 +728,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                         </div>
                     </div> */}
 
-                    {/* Email List */}
+                    {/* Lista de correos para contacto masivo */}
                     <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
                         <h3 className="text-lg font-semibold mb-3 text-slate-700">Lista de Correos (Próxima Semana)</h3>
                         <div className="space-y-3">
@@ -767,7 +767,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                         </div>
                     </div>
 
-                    {/* Blocking */}
+                    {/* Formulario de bloqueos */}
                     <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
                         <h3 className="text-lg font-semibold mb-3 text-slate-700">Bloqueo de Equipos</h3>
                         <div className="space-y-3">
@@ -859,7 +859,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                 </div>
             </div>
 
-            {/* Calendar Preview Section */}
+            {/* Vista previa editable del calendario */}
             <div className="border-t border-slate-200 pt-8">
                 <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
                     <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
@@ -1005,7 +1005,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                 </div>
             </div>
 
-            {/* Edit Modal Overlay */}
+            {/* Modal para editar, liberar o intercambiar reservas */}
             {editingBooking && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-50 p-4">
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-md animate-fade-in p-6">
@@ -1131,7 +1131,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                 </div>
             )}
 
-            {/* Admin Booking Modal */}
+            {/* Modal para crear reservas desde admin */}
             <AdminBookingModal
                 isOpen={adminBookingModalOpen}
                 selectedSlots={selectedAdminSlots}

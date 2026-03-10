@@ -5,6 +5,19 @@ Todos los cambios notables en este proyecto serán documentados en este archivo.
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/),
 y este proyecto adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
+## [Unreleased]
+
+### 📝 Documentacion
+
+- Reescritura de README con enfoque de onboarding para nuevos colaboradores.
+- Actualizacion de ESTRUCTURA.md como guia de navegacion por responsabilidades.
+- Actualizacion de RELEASE_CHECKLIST.md con pasos operativos claros para publicar.
+
+### 🧩 Mantenibilidad
+
+- Normalizacion de comentarios en frontend, backend y scripts con lenguaje didactico.
+- Comentarios alineados en espanol tecnico y centrados en intencion de negocio.
+
 ## [1.0.0] - 2026-03-02
 
 ### ✨ Nuevo

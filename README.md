@@ -1,228 +1,172 @@
 # MicroReserva
 
-Sistema de gestión de reservas para la Sala de Petrografía, con frontend en React + Vite y backend serverless en Netlify Functions con PostgreSQL (Neon).
+Aplicacion para gestionar reservas de la Sala de Petrografia.
 
-## Resumen
+Stack principal:
+- Frontend: React + TypeScript + Vite.
+- Backend: Netlify Functions (Node) + PostgreSQL (Neon).
 
-MicroReserva permite:
+## Objetivo de esta guia
 
-- Solicitud de turnos por usuarios en una grilla semanal.
-- Gestión administrativa de solicitudes (aprobar, eliminar, editar e intercambiar).
-- Bloqueo de equipos por día, rango o de forma indefinida.
-- Exportación de calendario semanal a PDF.
-- Control de reglas de negocio (límite de turnos por persona, ventana de solicitud y validaciones de conflicto).
+Este README esta pensado para facilitar la entrada de nuevos colaboradores al proyecto.
+Al terminar de leerlo debes poder:
+- levantar el proyecto en local,
+- entender por donde viajan los datos,
+- ubicar rapido donde editar cada funcionalidad.
 
-## Stack tecnológico
+## Flujo funcional (vista rapida)
 
-- Frontend: React 19, TypeScript, Vite 6, Lucide React.
-- Backend: Netlify Functions (Node), Neon PostgreSQL.
-- Seguridad: Basic Auth para administración, bcryptjs para validación de hashes.
-- Utilidades: html2pdf.js para exportación del calendario.
+1. Usuario selecciona slots en la grilla.
+2. Frontend envia solicitud a funciones en /.netlify/functions.
+3. Backend valida reglas de negocio y guarda en PostgreSQL.
+4. Admin aprueba, bloquea, libera o mueve reservas desde el panel.
 
-## Arquitectura
+## Arquitectura en 60 segundos
 
-### Frontend
+Frontend:
+- src/App.tsx: pantalla principal de reservas.
+- src/components/BookingModal.tsx: modal de captura de datos de usuario.
+- src/components/AdminPanel.tsx: panel de administracion.
+- src/services/api.ts: cliente HTTP para hablar con Netlify Functions.
 
-- src/App.tsx: flujo principal de reservas y visualización de disponibilidad.
-- src/components/BookingModal.tsx: captura de datos del solicitante.
-- src/components/AdminPanel.tsx: panel de administración y exportación PDF.
-- src/services/api.ts: cliente HTTP hacia las funciones serverless.
-- src/constants.ts y src/types.ts: catálogo de equipos, slots y tipos del dominio.
-
-### Backend (Netlify Functions)
-
-- netlify/functions/bookings.ts
-   - GET: lista reservas.
-   - POST: crea reservas (pendientes para usuarios; estados administrativos solo con autenticación).
-- netlify/functions/booking.ts
-   - PUT: actualiza estado o mueve una reserva de slot.
-   - DELETE: elimina reserva.
-- netlify/functions/bookings-swap.ts
-   - POST: intercambia slots entre dos reservas.
-- netlify/functions/settings.ts
-   - GET/PUT: lectura y actualización de ajustes administrativos.
-- netlify/functions/lib/auth.ts
-   - verificación de credenciales admin vía Basic Auth + bcrypt.
-
-## Estructura del proyecto
-
-```text
-microreserva/
-├── src/
-│   ├── App.tsx
-│   ├── main.tsx
-│   ├── constants.ts
-│   ├── types.ts
-│   ├── components/
-│   │   ├── AdminPanel.tsx
-│   │   └── BookingModal.tsx
-│   └── services/
-│       └── api.ts
-├── netlify/
-│   └── functions/
-│       ├── booking.ts
-│       ├── bookings.ts
-│       ├── bookings-swap.ts
-│       ├── settings.ts
-│       └── lib/
-│           └── auth.ts
-├── scripts/
-│   └── generate-hash.mjs
-├── schema.sql
-├── netlify.toml
-├── package.json
-└── README.md
-```
+Backend (serverless):
+- netlify/functions/bookings.ts: listar y crear reservas.
+- netlify/functions/booking.ts: editar estado/slot y eliminar reserva.
+- netlify/functions/bookings-swap.ts: intercambio de slots entre dos reservas.
+- netlify/functions/settings.ts: configuracion admin/publica.
+- netlify/functions/lib/auth.ts: validacion de Basic Auth admin.
 
 ## Requisitos
 
-- Node.js 20 o superior (alineado con netlify.toml).
+- Node.js 20 o superior.
 - npm 9 o superior.
-- Cuenta y base de datos PostgreSQL (Neon u otra compatible).
+- Base de datos PostgreSQL (Neon recomendado).
 
-## Instalación y ejecución local
+## Instalacion local
 
-1) Instalar dependencias:
+1. Instalar dependencias:
 
 ```bash
 npm install
 ```
 
-2) Configurar variables de entorno en un archivo .env local (o en el entorno de Netlify Dev):
+2. Crear archivo .env con variables minimas:
 
-```bash
+```env
 DATABASE_URL=postgres://usuario:password@host/db
 ALLOWED_ORIGIN=http://localhost:8888
 ADMIN_USERS=[{"username":"admin","passwordHash":"$2a$12$..."}]
 ```
 
-3) Levantar entorno de desarrollo (frontend + functions):
+3. Levantar desarrollo:
 
 ```bash
 npm run dev
 ```
 
-Con la configuración actual de Netlify, la app corre en:
+Puertos esperados:
+- App + proxy Netlify: http://localhost:8888
+- Vite interno: http://localhost:3000
 
-- UI + proxy functions: http://localhost:8888
-- Vite interno: puerto 3000
+## Variables de entorno explicadas
 
-## Scripts disponibles
+- DATABASE_URL:
+  - Conexion a PostgreSQL.
+  - Sin esta variable, las funciones fallan al iniciar.
 
-- npm run dev: inicia Netlify Dev.
-- npm run build: genera build de frontend en dist.
-- npm run preview: previsualiza build de Vite.
-- npm run generate-hash: genera un hash bcrypt para contraseñas admin.
-
-## Configuración de autenticación admin
-
-El backend usa Basic Auth. En frontend, las credenciales se guardan temporalmente en sessionStorage y se envían en el header Authorization.
-
-Variable obligatoria:
-
-- ADMIN_USERS: JSON con arreglo de usuarios admins.
-
-Formato esperado:
+- ADMIN_USERS:
+  - JSON de usuarios admin con hash bcrypt.
+  - Ejemplo:
 
 ```json
 [
-   {
-      "username": "admin",
-      "passwordHash": "$2a$12$..."
-   }
+  {
+    "username": "admin",
+    "passwordHash": "$2a$12$..."
+  }
 ]
 ```
 
-Para generar un hash bcrypt:
+- ALLOWED_ORIGIN:
+  - Dominio permitido para CORS en produccion.
+  - En local, las funciones aceptan origen abierto para facilitar desarrollo.
 
-```bash
-npm run generate-hash
-```
+## Scripts utiles
 
-## Base de datos
+- npm run dev: desarrollo completo con Netlify Dev.
+- npm run build: build de frontend.
+- npm run preview: probar build local.
+- npm run generate-hash: generar hash bcrypt para ADMIN_USERS.
 
-El esquema SQL base está en schema.sql e incluye:
+## Regla de negocio clave
 
-- Tabla bookings.
-- Tabla admin_settings.
-- Índices para consultas por fecha, estado y correo.
+- Ventana de solicitud:
+  - Lunes 07:00 a Viernes 12:00.
 
-Aplicación de esquema recomendada:
+- Limite de reservas:
+  - Aplica solo para la proxima semana.
+  - Configurable desde panel admin.
 
-1) Crear base de datos.
-2) Ejecutar schema.sql completo.
-3) Verificar que admin_settings contenga la key notification_email.
-
-## Reglas funcionales relevantes
-
-- Máximo de slots por persona: 6 reservas activas (pendiente/aprobada).
-- Ventana de solicitud: lunes 07:00 a viernes 12:00.
 - Estados de reserva:
-   - pending: solicitud del usuario.
-   - approved: aprobada por administración.
-   - blocked: bloqueada por administración.
-   - available: estado de referencia en UI.
-- Bloqueo indefinido por equipo o para todos los equipos.
+  - pending: solicitud pendiente.
+  - approved: aprobada por admin.
+  - blocked: bloqueada por admin.
+  - available: slot libre/placeholder.
 
-## Endpoints
+## Guia de codigo
 
-Base local:
+Si necesitas cambiar...
 
-- /.netlify/functions
+- UI de seleccion de turnos:
+  - Revisar src/App.tsx y src/components/BookingModal.tsx.
 
-Rutas:
+- Logica de validacion en cliente:
+  - Revisar src/App.tsx (handleSlotClick y handleBookingSubmit).
 
-- GET /bookings
-- POST /bookings
-- PUT /booking?id={id}
-- DELETE /booking?id={id}
-- POST /bookings-swap
-- GET /settings
-- PUT /settings
+- Reglas reales de seguridad/negocio:
+  - Revisar netlify/functions/bookings.ts.
+  - Nota: el backend es la fuente de verdad.
 
-Además, netlify.toml define un redirect de /api/* hacia /.netlify/functions/*.
+- Login admin:
+  - Frontend: src/services/api.ts + src/App.tsx.
+  - Backend: netlify/functions/lib/auth.ts.
 
-## Despliegue en Netlify
+- Acciones de administracion:
+  - UI: src/components/AdminPanel.tsx.
+  - Endpoints: netlify/functions/booking.ts, netlify/functions/bookings-swap.ts, netlify/functions/settings.ts.
 
-Configuración ya incluida en netlify.toml:
+## Troubleshooting rapido
 
-- Build command: npm run build
-- Publish directory: dist
-- Functions directory: netlify/functions
-- Headers de seguridad y caché configurados
+Error CORS en local:
+- Reinicia npm run dev.
+- Limpia cache de Netlify si hace falta: rm -rf .netlify/cache
+- Verifica que entras por http://localhost:8888
 
-Variables de entorno mínimas en producción:
+401 Unauthorized en admin:
+- Revisa formato JSON de ADMIN_USERS.
+- Verifica que el hash bcrypt corresponda a la contraseña.
 
+No guarda reservas:
+- Revisa DATABASE_URL.
+- Revisa logs de funciones en terminal de Netlify Dev.
+
+Pantalla en blanco:
+- Revisa consola del navegador.
+- Verifica que Vite y Netlify Dev esten corriendo sin errores.
+
+## Deploy en Netlify
+
+Configuracion actual (netlify.toml):
+- build command: npm run build
+- publish dir: dist
+- functions dir: netlify/functions
+
+Variables minimas en Netlify:
 - DATABASE_URL
 - ADMIN_USERS
-- ALLOWED_ORIGIN (recomendado fijarlo al dominio real)
+- ALLOWED_ORIGIN
 
-## Troubleshooting
+## Estado
 
-### 401 Unauthorized en panel admin
-
-- Verifica ADMIN_USERS y formato JSON válido.
-- Verifica que el hash de password corresponda a la contraseña usada.
-
-### Error de CORS
-
-- Ajusta ALLOWED_ORIGIN al dominio correcto del frontend.
-
-### No se guardan reservas
-
-- Verifica conectividad de DATABASE_URL.
-- Revisa logs de Netlify Functions para detalle del error SQL.
-
-### Conflictos al mover/intercambiar reservas
-
-- El sistema rechaza operaciones cuando detecta colisión de slot.
-
-## Notas de mantenimiento
-
-- Si cambias reglas de negocio, actualiza tanto frontend (validación UX) como backend (validación autoritativa).
-- Mantén sincronizado el catálogo de equipos en src/constants.ts con la disponibilidad real del laboratorio.
-
-## Estado del proyecto
-
-- Versión: 1.0.0
-- Última actualización de README: Febrero 2026
+- Version: 1.0.0
+- README actualizado: 2026-03-10

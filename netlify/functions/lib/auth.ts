@@ -6,8 +6,8 @@ interface AdminUser {
 }
 
 /**
- * Verify admin authentication from Authorization header
- * Expected format: Basic <base64(username:password)>
+ * Verifica autenticacion admin leyendo el header Authorization.
+ * Formato esperado: Basic <base64(username:password)>
  */
 export async function verifyAdminAuth(authHeader?: string): Promise<boolean> {
     try {
@@ -20,7 +20,7 @@ export async function verifyAdminAuth(authHeader?: string): Promise<boolean> {
             return false;
         }
 
-        // Parse Basic auth header
+        // Validamos prefijo Basic y decodificamos credenciales
         if (!authHeader.startsWith('Basic ')) {
             return false;
         }
@@ -33,7 +33,7 @@ export async function verifyAdminAuth(authHeader?: string): Promise<boolean> {
             return false;
         }
 
-        // Parse admin users
+        // Parseamos usuarios admin desde variable de entorno
         let adminUsers: AdminUser[];
         try {
             adminUsers = JSON.parse(adminUsersJson);
@@ -47,7 +47,7 @@ export async function verifyAdminAuth(authHeader?: string): Promise<boolean> {
             return false;
         }
 
-        // Find user and verify password
+        // Buscamos usuario y comparamos password plano vs hash bcrypt
         for (const admin of adminUsers) {
             if (admin.username === username) {
                 const isPasswordValid = await compare(password, admin.passwordHash);

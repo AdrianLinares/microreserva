@@ -4,7 +4,8 @@ const API_URL = (import.meta as any).env.VITE_API_URL || '/.netlify/functions';
 const ADMIN_TOKEN_KEY = 'micro_admin_token';
 
 /**
- * Save admin credentials to sessionStorage as base64(username:password)
+ * Guarda credenciales admin en sessionStorage como base64(username:password).
+ * Esto evita pedir login en cada accion del panel durante la misma sesion.
  */
 export function saveAdminCredentials(username: string, password: string): void {
     const credentials = `${username}:${password}`;
@@ -13,14 +14,14 @@ export function saveAdminCredentials(username: string, password: string): void {
 }
 
 /**
- * Clear admin credentials from sessionStorage
+ * Elimina credenciales admin de sessionStorage.
  */
 export function clearAdminCredentials(): void {
     sessionStorage.removeItem(ADMIN_TOKEN_KEY);
 }
 
 /**
- * Get Authorization header from sessionStorage
+ * Construye el header Authorization a partir del token guardado.
  */
 function getAuthHeader(): string | undefined {
     const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
@@ -29,7 +30,10 @@ function getAuthHeader(): string | undefined {
 }
 
 /**
- * Generic HTTP request helper
+ * Helper HTTP generico para centralizar:
+ * - manejo de headers
+ * - auth opcional
+ * - mensajes de error consistentes
  */
 async function request<T>(
     path: string,
@@ -68,7 +72,7 @@ async function request<T>(
             const errorData = await response.json();
             errorMessage = errorData.error || errorMessage;
         } catch (e) {
-            // Response body is not JSON, use status message
+            // Si el backend no devuelve JSON, usamos texto plano como fallback
             const text = await response.text();
             if (text) {
                 errorMessage = text.substring(0, 200);
@@ -81,7 +85,8 @@ async function request<T>(
 }
 
 /**
- * Get all bookings from the server
+ * Obtiene todas las reservas.
+ * Agregamos timestamp para evitar respuesta en cache del navegador/proxy.
  */
 export async function getBookings(): Promise<Booking[]> {
     return request<Booking[]>(`/bookings?t=${Date.now()}`, {
@@ -91,7 +96,7 @@ export async function getBookings(): Promise<Booking[]> {
 }
 
 /**
- * Add a new booking
+ * Crea una reserva nueva.
  */
 export async function addBooking(booking: Booking): Promise<void> {
     await request('/bookings', {
@@ -101,7 +106,7 @@ export async function addBooking(booking: Booking): Promise<void> {
 }
 
 /**
- * Update booking status
+ * Actualiza solo estado de una reserva (approved/pending/blocked/available).
  */
 export async function updateBookingStatus(
     id: string,
@@ -123,7 +128,7 @@ export async function updateBookingStatus(
 }
 
 /**
- * Update booking details (date, equipmentId, timeSlotId)
+ * Mueve una reserva a otro slot (fecha/equipo/horario).
  */
 export async function updateBookingDetails(
     oldId: string,
@@ -144,7 +149,7 @@ export async function updateBookingDetails(
 }
 
 /**
- * Delete a booking
+ * Elimina una reserva por id.
  */
 export async function deleteBooking(id: string): Promise<void> {
     await request(`/booking?id=${encodeURIComponent(id)}`, {
@@ -153,7 +158,7 @@ export async function deleteBooking(id: string): Promise<void> {
 }
 
 /**
- * Swap two booking slots
+ * Intercambia los slots entre dos reservas.
  */
 export async function swapBookingSlots(firstId: string, secondId: string): Promise<void> {
     await request('/bookings-swap', {
@@ -171,21 +176,21 @@ export interface AdminSettings extends PublicAdminSettings {
 }
 
 /**
- * Get admin settings
+ * Lee configuracion completa del panel admin (requiere autenticacion).
  */
 export async function getAdminSettings(): Promise<AdminSettings> {
     return request('/settings', { method: 'GET' }, true);
 }
 
 /**
- * Get public settings (no admin auth required)
+ * Lee configuracion publica (sin autenticacion), usada por la UI de usuarios.
  */
 export async function getPublicSettings(): Promise<PublicAdminSettings> {
     return request('/settings', { method: 'GET' });
 }
 
 /**
- * Save admin settings
+ * Guarda configuracion del panel admin.
  */
 export async function saveAdminSettings(settings: { notificationEmail?: string; nextWeekSlotsLimit?: number }): Promise<void> {
     await request('/settings', {
@@ -195,7 +200,8 @@ export async function saveAdminSettings(settings: { notificationEmail?: string; 
 }
 
 /**
- * Get Monday of the current week
+ * Devuelve el lunes de la semana de una fecha dada.
+ * Se usa para calcular ventanas semanales de manera consistente.
  */
 export function getMondayOfCurrentWeek(d: Date): Date {
     const date = new Date(d);
@@ -207,13 +213,13 @@ export function getMondayOfCurrentWeek(d: Date): Date {
 }
 
 /**
- * Generate week days starting from Monday
+ * Genera los dias laborales (lunes a viernes) de la semana solicitada.
  */
 export function generateWeekDays(weekOffset: number = 0): Date[] {
     const today = new Date();
     const monday = getMondayOfCurrentWeek(today);
 
-    // Add offset weeks (7 days * offset)
+    // weekOffset=1 significa proxima semana, por eso sumamos bloques de 7 dias
     monday.setDate(monday.getDate() + weekOffset * 7);
 
     const days = [];

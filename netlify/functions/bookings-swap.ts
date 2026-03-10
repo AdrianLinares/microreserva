@@ -14,8 +14,12 @@ interface SwapPayload {
 }
 
 function getCorsHeaders() {
+    // En desarrollo permitimos cualquier origen; en produccion usamos ALLOWED_ORIGIN
+    const isDev = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
+    const allowedOrigin = isDev ? '*' : (process.env.ALLOWED_ORIGIN || '*');
+
     return {
-        'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || '*',
+        'Access-Control-Allow-Origin': allowedOrigin,
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         'Content-Type': 'application/json',
@@ -23,7 +27,7 @@ function getCorsHeaders() {
 }
 
 const handler: Handler = async (event, context) => {
-    // Handle CORS preflight
+    // Respuesta al preflight CORS
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
@@ -33,7 +37,7 @@ const handler: Handler = async (event, context) => {
     }
 
     try {
-        // Verify admin auth
+        // Solo admin puede intercambiar reservas
         const authHeader = event.headers.authorization || event.headers.Authorization;
         const isAuthorized = await verifyAdminAuth(authHeader);
 
@@ -63,7 +67,7 @@ const handler: Handler = async (event, context) => {
 
         const payload: SwapPayload = JSON.parse(event.body);
 
-        // Validate inputs
+        // Validaciones basicas del payload
         if (!payload.firstId || !payload.secondId) {
             return {
                 statusCode: 400,
@@ -82,7 +86,7 @@ const handler: Handler = async (event, context) => {
 
         const db = sql;
 
-        // Fetch both bookings
+        // Consultamos ambas reservas a intercambiar
         const firstResult = await db`SELECT * FROM bookings WHERE id = ${payload.firstId}`;
         const secondResult = await db`SELECT * FROM bookings WHERE id = ${payload.secondId}`;
 
@@ -97,7 +101,7 @@ const handler: Handler = async (event, context) => {
         const firstBooking = firstResult[0];
         const secondBooking = secondResult[0];
 
-        // Reject if either is blocked
+        // No se permite intercambio cuando alguna reserva es un bloqueo
         if (firstBooking.status === 'blocked' || secondBooking.status === 'blocked') {
             return {
                 statusCode: 400,
@@ -106,11 +110,11 @@ const handler: Handler = async (event, context) => {
             };
         }
 
-        // Calculate new IDs after swap
+        // Calculamos IDs destino segun el slot de la otra reserva
         const firstNewId = `${secondBooking.date}-${secondBooking.equipment_id}-${secondBooking.time_slot_id}`;
         const secondNewId = `${firstBooking.date}-${firstBooking.equipment_id}-${firstBooking.time_slot_id}`;
 
-        // Check for collisions (exclude the two being swapped)
+        // Verificamos conflictos con terceros (excluyendo las dos reservas en swap)
         const collisionCheck =
             await db`SELECT * FROM bookings WHERE id IN (${firstNewId}, ${secondNewId}) AND id NOT IN (${payload.firstId}, ${payload.secondId})`;
 
@@ -122,13 +126,13 @@ const handler: Handler = async (event, context) => {
             };
         }
 
-        // Perform atomic swap using temporary ID
+        // Swap en 3 pasos con id temporal para evitar colisiones de clave primaria
         const tmpId = `__tmp_${payload.firstId}_${Date.now()}`;
 
-        // Step 1: Rename first booking to temporary ID
+        // Paso 1: mover primera reserva a id temporal
         await db`UPDATE bookings SET id = ${tmpId} WHERE id = ${payload.firstId}`;
 
-        // Step 2: Update second booking to first booking's old slot data
+        // Paso 2: segunda reserva toma el slot original de la primera
         await db`UPDATE bookings SET 
       id = ${firstNewId}, 
       date = ${firstBooking.date}, 
@@ -136,7 +140,7 @@ const handler: Handler = async (event, context) => {
       time_slot_id = ${firstBooking.time_slot_id}
       WHERE id = ${payload.secondId}`;
 
-        // Step 3: Rename temp booking to second booking's new ID with second's slot data
+        // Paso 3: reserva temporal toma el slot original de la segunda
         await db`UPDATE bookings SET 
       id = ${secondNewId}, 
       date = ${secondBooking.date}, 
