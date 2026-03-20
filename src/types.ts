@@ -30,7 +30,7 @@ export interface Booking {
 
     // Campos que usa administracion para bloqueos
     blockedReason?: string;
-    blockType?: 'single' | 'range' | 'indefinite'; // Un dia, rango de fechas o bloqueo hasta desbloqueo manual
+    blockType?: 'slot' | 'single' | 'range' | 'indefinite'; // Turno individual, un dia, rango de fechas o bloqueo hasta desbloqueo manual
     blockStartDate?: string; // Fecha inicial para bloqueos por rango o indefinidos
     blockEndDate?: string; // Fecha final solo para bloqueos por rango
 

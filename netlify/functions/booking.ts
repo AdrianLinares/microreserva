@@ -11,7 +11,7 @@ const sql = neon(process.env.DATABASE_URL);
 interface UpdateStatusPayload {
     status: string;
     blockedReason?: string;
-    blockType?: 'single' | 'range' | 'indefinite';
+    blockType?: 'slot' | 'single' | 'range' | 'indefinite';
     blockStartDate?: string;
     blockEndDate?: string;
 }

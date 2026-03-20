@@ -50,10 +50,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
 
     // Estado del formulario de bloqueos
     const [blockReason, setBlockReason] = useState('Mantenimiento');
-    const [blockType, setBlockType] = useState<'single' | 'range' | 'indefinite'>('single');
+    const [blockType, setBlockType] = useState<'slot' | 'single' | 'range' | 'indefinite'>('single');
     const [blockStartDate, setBlockStartDate] = useState('');
     const [blockEndDate, setBlockEndDate] = useState('');
     const [blockEquipmentId, setBlockEquipmentId] = useState<number | 'all'>('all');
+    const [selectedBlockSlots, setSelectedBlockSlots] = useState<Array<{ date: string; equipmentId: number; timeSlotId: string }>>([]);
 
     // Estado del modal de edicion/intercambio
     const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
@@ -290,6 +291,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
 
     const handleBlockDay = async () => {
         // Validaciones minimas segun el tipo de bloqueo seleccionado
+        if (blockType === 'slot' && selectedBlockSlots.length === 0) {
+            alert("Seleccione al menos un turno para bloquear");
+            return;
+        }
         if (blockType === 'single' && !blockStartDate) {
             alert("Seleccione una fecha");
             return;
@@ -356,6 +361,51 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                     });
                 }
                 blockMessage = `Se bloqueó indefinidamente a partir del ${new Date(blockStartDate).toLocaleDateString('es-ES')} (${blockEquipmentId === 'all' ? 'Todos los equipos' : 'Equipo seleccionado'})`;
+            } else if (blockType === 'slot') {
+                // Bloqueo de turnos individuales seleccionados
+                let successCount = 0;
+                let errors: string[] = [];
+
+                console.log('Bloqueando turnos individuales:', selectedBlockSlots);
+
+                for (const slot of selectedBlockSlots) {
+                    const id = `${slot.date}-${slot.equipmentId}-${slot.timeSlotId}`;
+                    try {
+                        // Primero intentamos actualizar un turno existente
+                        await api.updateBookingStatus(id, 'blocked', {
+                            blockedReason: blockReason,
+                            blockType: 'slot',
+                            blockStartDate: slot.date
+                        });
+                        successCount++;
+                        console.log(`✓ Turno actualizado: ${id}`);
+                    } catch (updateError) {
+                        // Si no existe, intentamos crear uno nuevo
+                        try {
+                            await api.addBooking({
+                                id,
+                                date: slot.date,
+                                equipmentId: slot.equipmentId,
+                                timeSlotId: slot.timeSlotId,
+                                status: 'blocked',
+                                blockedReason: blockReason,
+                                blockType: 'slot',
+                                blockStartDate: slot.date,
+                                timestamp
+                            });
+                            successCount++;
+                            console.log(`✓ Turno creado: ${id}`);
+                        } catch (createError) {
+                            const errorMsg = createError instanceof Error ? createError.message : String(createError);
+                            errors.push(`${slot.date} - MESA ${slot.equipmentId}: ${errorMsg}`);
+                            console.error(`✗ Error bloqueando turno ${id}:`, createError);
+                        }
+                    }
+                }
+                if (errors.length > 0) {
+                    console.error('Errores al bloquear turnos:', errors);
+                }
+                blockMessage = `Se bloqueó ${successCount} turno(s) individual(es)`;
             }
 
             // Para bloqueos single/range creamos una reserva bloqueada por cada slot
@@ -398,6 +448,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             setBlockEndDate('');
             setBlockType('single');
             setBlockReason('Mantenimiento');
+            setSelectedBlockSlots([]);
             await refreshData();
         } catch (error) {
             alert('Error al bloquear: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -501,12 +552,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
     // Handlers para crear reservas manuales desde admin
     const handleAdminSlotClick = (date: string, equipmentId: number, timeSlotId: string) => {
         const slotKey = `${date}-${equipmentId}-${timeSlotId}`;
-        const isSelected = selectedAdminSlots.some(s => `${s.date}-${s.equipmentId}-${s.timeSlotId}` === slotKey);
 
-        if (isSelected) {
-            setSelectedAdminSlots(prev => prev.filter(s => `${s.date}-${s.equipmentId}-${s.timeSlotId}` !== slotKey));
+        // Si estamos en modo bloqueo de turno individual
+        if (blockType === 'slot') {
+            const isSelected = selectedBlockSlots.some(s => `${s.date}-${s.equipmentId}-${s.timeSlotId}` === slotKey);
+            if (isSelected) {
+                setSelectedBlockSlots(prev => prev.filter(s => `${s.date}-${s.equipmentId}-${s.timeSlotId}` !== slotKey));
+            } else {
+                setSelectedBlockSlots(prev => [...prev, { date, equipmentId, timeSlotId }]);
+            }
         } else {
-            setSelectedAdminSlots(prev => [...prev, { date, equipmentId, timeSlotId }]);
+            // Modo de creación de reserva
+            const isSelected = selectedAdminSlots.some(s => `${s.date}-${s.equipmentId}-${s.timeSlotId}` === slotKey);
+            if (isSelected) {
+                setSelectedAdminSlots(prev => prev.filter(s => `${s.date}-${s.equipmentId}-${s.timeSlotId}` !== slotKey));
+            } else {
+                setSelectedAdminSlots(prev => [...prev, { date, equipmentId, timeSlotId }]);
+            }
         }
     };
 
@@ -787,17 +849,44 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                 <select
                                     value={blockType}
                                     onChange={e => {
-                                        setBlockType(e.target.value as 'single' | 'range' | 'indefinite');
-                                        setBlockStartDate('');
-                                        setBlockEndDate('');
+                                        const newType = e.target.value as 'slot' | 'single' | 'range' | 'indefinite';
+                                        setBlockType(newType);
+                                        if (newType !== 'slot') {
+                                            setBlockStartDate('');
+                                            setBlockEndDate('');
+                                            setSelectedBlockSlots([]);
+                                        }
                                     }}
                                     className={inputClasses}
                                 >
+                                    <option value="slot">Seleccionar turno(s) individual(es)</option>
                                     <option value="single">Un solo día</option>
                                     <option value="range">Rango de fechas</option>
                                     <option value="indefinite">Indefinido (hasta desbloquear manualmente)</option>
                                 </select>
                             </div>
+
+                            {blockType === 'slot' && (
+                                <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                                    <p className="text-sm text-blue-700 font-medium mb-2">
+                                        🔗 Modo selección de turnos: Haz clic en los turnos del calendario para seleccionarlos.
+                                    </p>
+                                    {selectedBlockSlots.length > 0 && (
+                                        <div className="text-sm text-blue-600">
+                                            <p className="font-medium mb-1">{selectedBlockSlots.length} turno(s) seleccionado(s):</p>
+                                            <div className="bg-white rounded p-2 max-h-40 overflow-y-auto">
+                                                {selectedBlockSlots.map((slot, idx) => (
+                                                    <div key={idx} className="text-xs py-1 border-b border-blue-100 last:border-b-0">
+                                                        📅 {new Date(slot.date).toLocaleDateString('es-ES')} |
+                                                        🔬 MESA {slot.equipmentId} |
+                                                        🕐 {TIME_SLOTS.find(t => t.id === slot.timeSlotId)?.label || slot.timeSlotId}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {(blockType === 'single' || blockType === 'range' || blockType === 'indefinite') && (
                                 <div>
@@ -849,10 +938,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                             </div>
                             <button
                                 onClick={handleBlockDay}
-                                disabled={blockLoading}
+                                disabled={blockLoading || (blockType === 'slot' && selectedBlockSlots.length === 0)}
                                 className="w-full bg-slate-600 hover:bg-slate-700 text-white py-2 rounded transition text-sm shadow-sm disabled:opacity-50"
                             >
-                                {blockLoading ? 'Bloqueando...' : `Bloquear ${blockType === 'indefinite' ? 'Indefinidamente' : 'Horarios'}`}
+                                {blockLoading ? 'Bloqueando...' : blockType === 'slot' ? `Bloquear ${selectedBlockSlots.length} turno(s)` : blockType === 'indefinite' ? 'Bloquear Indefinidamente' : 'Bloquear Horarios'}
                             </button>
                         </div>
                     </div>
@@ -953,7 +1042,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                                             const displayBooking = indefiniteBlock || booking;
                                                             const status = indefiniteBlock ? 'blocked' : (booking ? booking.status : 'available');
 
-                                                            const isAdminSelected = isAdmin && selectedAdminSlots.some(s =>
+                                                            const slotsToCheck = blockType === 'slot' ? selectedBlockSlots : selectedAdminSlots;
+                                                            const isAdminSelected = isAdmin && slotsToCheck.some(s =>
                                                                 s.date === dayStr && s.equipmentId === eq.id && s.timeSlotId === slot.id
                                                             );
 
