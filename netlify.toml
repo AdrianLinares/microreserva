@@ -10,12 +10,16 @@
   command = "vite"
   targetPort = 3000
   port = 8888
-  publish = "dist"
   autoLaunch = true
 
-[[redirects]]
+[[context.production.redirects]]
   from   = "/api/*"
   to     = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
   status = 200
 
 [[headers]]

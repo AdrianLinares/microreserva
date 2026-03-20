@@ -324,11 +324,11 @@ const App: React.FC = () => {
     const getCellColor = (status: BookingStatus | undefined, isSelected: boolean) => {
         if (isSelected) return 'bg-blue-600 text-white ring-2 ring-blue-400';
         switch (status) {
-            case 'approved': return 'bg-status-approved text-blue-900 border-blue-200';
-            case 'pending': return 'bg-status-pending text-amber-900 border-amber-200';
-            case 'blocked': return 'bg-status-blocked text-gray-500 border-gray-300 cursor-not-allowed';
+            case 'approved': return 'bg-blue-300 text-blue-900 border-blue-200';
+            case 'pending': return 'bg-amber-300 text-amber-900 border-amber-200';
+            case 'blocked': return 'bg-gray-300 text-gray-500 border-gray-300 cursor-not-allowed';
             case 'available':
-            default: return 'bg-status-available hover:bg-green-400 cursor-pointer text-green-900 border-green-200 transition-colors';
+            default: return 'bg-green-300 hover:bg-green-400 cursor-pointer text-green-900 border-green-200 transition-colors';
         }
     };
 

@@ -657,11 +657,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
 
     const getCellColor = (status: BookingStatus | undefined) => {
         switch (status) {
-            case 'approved': return 'bg-status-approved text-blue-900 border-blue-200 hover:bg-blue-300';
-            case 'pending': return 'bg-status-pending text-amber-900 border-amber-200 hover:bg-amber-300';
-            case 'blocked': return 'bg-status-blocked text-gray-500 border-gray-300 hover:bg-gray-300';
+            case 'approved': return 'bg-blue-300 text-blue-900 border-blue-200 hover:bg-blue-300';
+            case 'pending': return 'bg-amber-300 text-amber-900 border-amber-200 hover:bg-amber-300';
+            case 'blocked': return 'bg-gray-300 text-gray-500 border-gray-300 hover:bg-gray-300';
             case 'available':
-            default: return 'bg-status-available text-green-900 border-green-200 opacity-60'; // Mas evidente para admin que el slot esta libre
+            default: return 'bg-green-300 text-green-900 border-green-200 opacity-60'; // Mas evidente para admin que el slot esta libre
         }
     };
 
