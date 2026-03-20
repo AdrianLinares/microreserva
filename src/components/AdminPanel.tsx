@@ -704,7 +704,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                     </div>
 
                     {/* Notificaciones (actualmente desactivadas) */}
-                    {/* <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
+                    <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
                         <h3 className="text-lg font-semibold mb-3 text-slate-700">Sistema de Notificaciones</h3>
                         <div className="flex flex-col gap-3">
                             <label className="text-sm text-slate-600">Correo remitente:</label>
@@ -726,7 +726,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                 {notificationStatus === 'sent' && '¡Enviado!'}
                             </button>
                         </div>
-                    </div> */}
+                    </div>
 
                     {/* Lista de correos para contacto masivo */}
                     <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">

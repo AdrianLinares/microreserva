@@ -99,10 +99,14 @@ export async function getBookings(): Promise<Booking[]> {
  * Crea una reserva nueva.
  */
 export async function addBooking(booking: Booking): Promise<void> {
+    const shouldRequireAuth =
+        booking.status !== 'pending' ||
+        Boolean(booking.blockedReason || booking.blockType || booking.blockStartDate || booking.blockEndDate);
+
     await request('/bookings', {
         method: 'POST',
         body: JSON.stringify(booking),
-    });
+    }, shouldRequireAuth);
 }
 
 /**

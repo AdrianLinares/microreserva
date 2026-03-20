@@ -10,6 +10,10 @@ const sql = neon(process.env.DATABASE_URL);
 
 interface UpdateStatusPayload {
     status: string;
+    blockedReason?: string;
+    blockType?: 'single' | 'range' | 'indefinite';
+    blockStartDate?: string;
+    blockEndDate?: string;
 }
 
 interface UpdateDetailsPayload {
@@ -90,7 +94,42 @@ const handler: Handler = async (event, context) => {
                     };
                 }
 
-                await sql`UPDATE bookings SET status = ${statusPayload.status} WHERE id = ${bookingId}`;
+                let updatedRows: Array<{ id: string }> = [];
+
+                if (statusPayload.status === 'blocked') {
+                    // Si bloqueamos, permitimos adjuntar metadatos de bloqueo.
+                    // Cuando no llegan, conservamos los valores existentes.
+                    updatedRows = await sql`
+                        UPDATE bookings
+                        SET status = ${statusPayload.status},
+                            blocked_reason = COALESCE(${statusPayload.blockedReason ?? null}, blocked_reason),
+                            block_type = COALESCE(${statusPayload.blockType ?? null}, block_type),
+                            block_start_date = COALESCE(${statusPayload.blockStartDate ?? null}, block_start_date),
+                            block_end_date = COALESCE(${statusPayload.blockEndDate ?? null}, block_end_date)
+                        WHERE id = ${bookingId}
+                        RETURNING id
+                    ` as Array<{ id: string }>;
+                } else {
+                    // Si el estado deja de ser "blocked", limpiamos metadatos de bloqueo.
+                    updatedRows = await sql`
+                        UPDATE bookings
+                        SET status = ${statusPayload.status},
+                            blocked_reason = NULL,
+                            block_type = NULL,
+                            block_start_date = NULL,
+                            block_end_date = NULL
+                        WHERE id = ${bookingId}
+                        RETURNING id
+                    ` as Array<{ id: string }>;
+                }
+
+                if (updatedRows.length === 0) {
+                    return {
+                        statusCode: 404,
+                        headers: getCorsHeaders(),
+                        body: JSON.stringify({ error: 'Booking not found' }),
+                    };
+                }
 
                 return {
                     statusCode: 200,
