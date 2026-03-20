@@ -1,0 +1,17 @@
+import { Equipment, TimeSlot } from './types';
+
+export const EQUIPMENT_LIST: Equipment[] = [
+    { id: 1, name: 'MESA No. 1', description: 'ESTEREOMICROSCOPIO ZEISS (con Cámara)', type: 'Estereomicroscopio', brand: 'ZEISS', obj: 'obj 0.63x, 1x, 1.5x', hasCamera: true },
+    { id: 2, name: 'MESA No. 2', description: 'MICROSCOPIO ZEISS (con Cámara)', type: 'Microscopio', brand: 'ZEISS', obj: 'obj 2.5x, 4x, 10x, 20x, 50x, 100x', hasCamera: true },
+    { id: 3, name: 'MESA No. 3', description: 'ESTEREOMICROSCOPIO ZEISS (con Cámara)', type: 'Estereomicroscopio', brand: 'ZEISS', obj: 'obj 0.63x, 1x, 1.5x', hasCamera: true },
+    { id: 4, name: 'MESA No. 4', description: 'MICROSCOPIO OLYMPUS (con Cámara)', type: 'Microscopio', brand: 'OLYMPUS', obj: 'obj 2.5x, 4x, 10x, 20x, 50x, 100x', hasCamera: true },
+    { id: 5, name: 'MESA No. 5', description: 'MICROSCOPIO OLYMPUS (con Cámara)', type: 'Microscopio', brand: 'OLYMPUS', obj: 'obj 2.5x, 4x, 10x, 20x, 50x, 100x', hasCamera: true },
+    { id: 6, name: 'MESA No. 6', description: 'MICROSCOPIO OLYMPUS (con Cámara)', type: 'Microscopio', brand: 'OLYMPUS', obj: 'obj 2.5x, 4x, 10x, 20x, 50x, 100x', hasCamera: true },
+    { id: 7, name: 'MESA No. 7', description: 'ESTEREOMICROSCOPIO ZEISS (sin Cámara)', type: 'Estereomicroscopio', brand: 'ZEISS', obj: 'obj 0.63x, 1x, 1.5x', hasCamera: false },
+    { id: 8, name: 'MESA No. 8', description: 'MICROSCOPIO OLYMPUS (con Cámara)', type: 'Microscopio', brand: 'OLYMPUS', obj: 'obj 4x, 10x, 20x, 100x', hasCamera: true },
+];
+
+export const TIME_SLOTS: TimeSlot[] = [
+    { id: '08:00', label: '8:00 AM - 12:00 PM', startHour: 8 },
+    { id: '12:00', label: '12:00 PM - 4:00 PM', startHour: 13 },
+];

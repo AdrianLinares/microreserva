@@ -1,0 +1,642 @@
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { EQUIPMENT_LIST, TIME_SLOTS } from './constants';
+import { generateWeekDays, getBookings, addBooking, saveAdminCredentials, clearAdminCredentials, getAdminSettings, getPublicSettings } from './services/api';
+import { Booking, BookingStatus } from './types';
+import BookingModal from './components/BookingModal';
+import AdminPanel from './components/AdminPanel';
+import { User, Lock, Calendar, Clock, Filter, AlertCircle, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+
+// Utilidades de calendario y reglas de negocio
+const isBookingWindowOpen = () => {
+    const now = new Date();
+    const day = now.getDay(); // 0 domingo, 1 lunes, ... 6 sabado
+    const hour = now.getHours();
+
+    // Ventana habilitada: lunes 07:00 a viernes 12:00
+    // Fin de semana: no se reciben solicitudes
+    if (day === 0 || day === 6) return false;
+
+    // Viernes desde las 12:00: cerrado
+    if (day === 5 && hour >= 12) return false;
+
+    // Lunes antes de las 07:00: cerrado
+    if (day === 1 && hour < 7) return false;
+
+    return true;
+};
+
+const formatDate = (date: Date) => date.toISOString().split('T')[0];
+const getDayLabel = (date: Date) => date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+const DEFAULT_NEXT_WEEK_SLOTS_LIMIT = 6;
+const LIVE_REFRESH_INTERVAL_MS = 15000;
+
+const parseIsoDateLocal = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+};
+
+const getMondayLocal = (inputDate: Date) => {
+    const date = new Date(inputDate);
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+    date.setDate(diff);
+    date.setHours(0, 0, 0, 0);
+    return date;
+};
+
+const isDateInNextWeek = (dateStr: string) => {
+    const targetWeekStart = getMondayLocal(parseIsoDateLocal(dateStr));
+    const nextWeekStart = getMondayLocal(new Date());
+    nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+    return targetWeekStart.getTime() === nextWeekStart.getTime();
+};
+
+const App: React.FC = () => {
+    // Estado global de la pantalla principal
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [showAdminLogin, setShowAdminLogin] = useState(false);
+    const [bookings, setBookings] = useState<Booking[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [apiError, setApiError] = useState<string | null>(null);
+    const [nextWeekSlotsLimit, setNextWeekSlotsLimit] = useState(DEFAULT_NEXT_WEEK_SLOTS_LIMIT);
+
+    // Estado de navegacion por semana
+    const [weekOffset, setWeekOffset] = useState(0);
+    const weekDays = useMemo(() => generateWeekDays(weekOffset), [weekOffset]);
+    // Ya no usamos activeDayIndex porque la UI muestra todos los dias
+
+    // Estado de filtros de equipos
+    const [filterType, setFilterType] = useState<'all' | 'Microscopio' | 'Estereomicroscopio'>('all');
+    const [filterBrand, setFilterBrand] = useState<'all' | 'ZEISS' | 'OLYMPUS'>('all');
+
+    // Estado del flujo de reserva y login admin
+    const [selectedSlots, setSelectedSlots] = useState<Array<{ date: string, equipmentId: number, timeSlotId: string }>>([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [loginUsername, setLoginUsername] = useState('');
+    const [loginPassword, setLoginPassword] = useState('');
+    const [loginError, setLoginError] = useState<string | null>(null);
+    const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
+    const isSyncingRef = useRef(false);
+
+    // Helper para refrescar reservas desde backend
+    const refreshData = useCallback(async () => {
+        try {
+            setApiError(null);
+            const data = await getBookings();
+            setBookings(data);
+        } catch (error) {
+            setApiError(error instanceof Error ? error.message : 'Error al cargar datos');
+        }
+    }, []);
+
+    const loadPublicSettings = useCallback(async () => {
+        try {
+            const settings = await getPublicSettings();
+            if (Number.isInteger(settings.nextWeekSlotsLimit) && settings.nextWeekSlotsLimit > 0) {
+                setNextWeekSlotsLimit(settings.nextWeekSlotsLimit);
+            }
+        } catch (error) {
+            console.error('Error loading public settings:', error);
+        }
+    }, []);
+
+    // Carga inicial al abrir la aplicacion
+    useEffect(() => {
+        (async () => {
+            try {
+                await Promise.all([refreshData(), loadPublicSettings()]);
+            } finally {
+                setIsLoading(false);
+            }
+        })();
+    }, [refreshData, loadPublicSettings]);
+
+    // Sincroniza datos cuando se vuelve a enfocar la pestana o se restaura desde cache del navegador
+    useEffect(() => {
+        const syncLatestData = async () => {
+            if (isSyncingRef.current) return;
+            isSyncingRef.current = true;
+            try {
+                await Promise.all([refreshData(), loadPublicSettings()]);
+            } finally {
+                isSyncingRef.current = false;
+            }
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                void syncLatestData();
+            }
+        };
+
+        const handleFocus = () => {
+            void syncLatestData();
+        };
+
+        const handlePageShow = (event: PageTransitionEvent) => {
+            if (event.persisted) {
+                void syncLatestData();
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('focus', handleFocus);
+        window.addEventListener('pageshow', handlePageShow);
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('focus', handleFocus);
+            window.removeEventListener('pageshow', handlePageShow);
+        };
+    }, [refreshData, loadPublicSettings]);
+
+    // Refresco periodico para reflejar cambios hechos por otros usuarios
+    useEffect(() => {
+        const intervalId = window.setInterval(() => {
+            if (document.visibilityState !== 'visible') return;
+            if (isSyncingRef.current) return;
+
+            isSyncingRef.current = true;
+            Promise.all([refreshData(), loadPublicSettings()])
+                .finally(() => {
+                    isSyncingRef.current = false;
+                });
+        }, LIVE_REFRESH_INTERVAL_MS);
+
+        return () => {
+            window.clearInterval(intervalId);
+        };
+    }, [refreshData, loadPublicSettings]);
+
+    // Lista visible de equipos segun filtros
+    const visibleEquipment = useMemo(() => {
+        return EQUIPMENT_LIST.filter(eq => {
+            if (filterType !== 'all' && eq.type !== filterType) return false;
+            if (filterBrand !== 'all' && eq.brand !== filterBrand) return false;
+            return true;
+        });
+    }, [filterType, filterBrand]);
+
+    // Mapa para busqueda O(1) por slot: evita recorrer todas las reservas en cada celda
+    const bookingMap = useMemo(() => {
+        const map = new Map<string, Booking>();
+        bookings.forEach(b => {
+            map.set(`${b.date}-${b.equipmentId}-${b.timeSlotId}`, b);
+        });
+        return map;
+    }, [bookings]);
+
+    // Funcion de lectura del mapa por slot
+    const getBookingForSlot = (eqId: number, timeId: string, date: string) => {
+        return bookingMap.get(`${date}-${eqId}-${timeId}`);
+    };
+
+    const isSlotSelected = (eqId: number, timeId: string, date: string) => {
+        return selectedSlots.some(s => s.equipmentId === eqId && s.timeSlotId === timeId && s.date === date);
+    };
+
+    // Bloqueo indefinido: aplica desde una fecha hacia adelante
+    const isSlotBlockedIndefinitely = (eqId: number, date: string) => {
+        return bookings.some(b =>
+            b.blockType === 'indefinite' &&
+            b.status === 'blocked' &&
+            (b.equipmentId === 0 || b.equipmentId === eqId) &&
+            date >= (b.blockStartDate || '')
+        );
+    };
+
+    // Interacciones del usuario sobre la grilla
+    const handleSlotClick = (eqId: number, timeId: string, date: string) => {
+        if (isAdmin) return; // Admin ve la grilla, pero edita desde su panel
+
+        const existingBooking = getBookingForSlot(eqId, timeId, date);
+
+        // 1) Primero validamos bloqueos indefinidos
+        if (isSlotBlockedIndefinitely(eqId, date)) {
+            alert("Este equipo está bloqueado indefinidamente. Por favor contacte al administrador.");
+            return;
+        }
+
+        // 2) Si ya existe reserva o bloqueo, no permitimos seleccion
+        if (existingBooking) {
+            // Solo reservas "available" pueden convertirse en seleccion del usuario
+            if (existingBooking.status !== 'available') return;
+        }
+
+        // 3) Validamos ventana horaria habilitada
+        if (!isBookingWindowOpen()) {
+            alert("Las solicitudes de turnos solo están disponibles desde el lunes 7:00 AM hasta el viernes 12:00 PM.");
+            return;
+        }
+
+        // 4) Toggle de seleccion del slot
+        const isSelected = isSlotSelected(eqId, timeId, date);
+        if (isSelected) {
+            setSelectedSlots(prev => prev.filter(s => !(s.equipmentId === eqId && s.timeSlotId === timeId && s.date === date)));
+        } else {
+            // El limite configurable aplica solo para la proxima semana
+            if (isDateInNextWeek(date)) {
+                const selectedNextWeekCount = selectedSlots.filter(slot => isDateInNextWeek(slot.date)).length;
+                if (selectedNextWeekCount >= nextWeekSlotsLimit) {
+                    alert(`Solo puedes seleccionar un máximo de ${nextWeekSlotsLimit} turnos para la próxima semana.`);
+                    return;
+                }
+            }
+            setSelectedSlots(prev => [...prev, { date, equipmentId: eqId, timeSlotId: timeId }]);
+        }
+    };
+
+    const handleBookingSubmit = async (userData: { name: string; email: string; group: string }) => {
+
+        // Limite: contamos solo reservas activas de la proxima semana
+        const activeNextWeekBookingsCount = bookings.filter(b =>
+            b.userEmail === userData.email &&
+            b.userName &&
+            (b.status === 'pending' || b.status === 'approved') &&
+            isDateInNextWeek(b.date)
+        ).length;
+
+        const selectedNextWeekCount = selectedSlots.filter(slot => isDateInNextWeek(slot.date)).length;
+
+        if (activeNextWeekBookingsCount + selectedNextWeekCount > nextWeekSlotsLimit) {
+            alert(`Límite excedido para la próxima semana. \n\nYa tienes ${activeNextWeekBookingsCount} turnos activos (pendientes o aprobados) para la próxima semana y estás intentando solicitar ${selectedNextWeekCount} más. \n\nEl límite configurado es de ${nextWeekSlotsLimit} turnos.`);
+            return;
+        }
+
+        const newBookings: Booking[] = [];
+        const timestamp = Date.now();
+
+        // En este punto, el modal ya valido nombre/correo/grupo
+        selectedSlots.forEach(slot => {
+            const id = `${slot.date}-${slot.equipmentId}-${slot.timeSlotId}`;
+            newBookings.push({
+                id,
+                date: slot.date,
+                equipmentId: slot.equipmentId,
+                timeSlotId: slot.timeSlotId,
+                status: 'pending',
+                userName: userData.name,
+                userEmail: userData.email,
+                userGroup: userData.group,
+                timestamp
+            });
+        });
+
+        try {
+            await Promise.all(newBookings.map(b => addBooking(b)));
+            await refreshData();
+            setSelectedSlots([]);
+            setIsModalOpen(false);
+            alert("Solicitud enviada con éxito. Esperando aprobación del administrador.");
+        } catch (e: any) {
+            alert("Error al reservar: " + e.message);
+        }
+    };
+
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!loginUsername || !loginPassword) {
+            setLoginError("Por favor complete todos los campos");
+            return;
+        }
+
+        setIsVerifyingLogin(true);
+        setLoginError(null);
+
+        try {
+            saveAdminCredentials(loginUsername, loginPassword);
+            // Validamos credenciales llamando un endpoint protegido
+            await getAdminSettings();
+            setIsAdmin(true);
+            setShowAdminLogin(false);
+            setSelectedSlots([]);
+            setLoginUsername('');
+            setLoginPassword('');
+        } catch (error) {
+            clearAdminCredentials();
+            setLoginError("Credenciales incorrectas");
+        } finally {
+            setIsVerifyingLogin(false);
+        }
+    };
+
+    // Helpers de render para colores/estilos
+    const getCellColor = (status: BookingStatus | undefined, isSelected: boolean) => {
+        if (isSelected) return 'bg-blue-600 text-white ring-2 ring-blue-400';
+        switch (status) {
+            case 'approved': return 'bg-status-approved text-blue-900 border-blue-200';
+            case 'pending': return 'bg-status-pending text-amber-900 border-amber-200';
+            case 'blocked': return 'bg-status-blocked text-gray-500 border-gray-300 cursor-not-allowed';
+            case 'available':
+            default: return 'bg-status-available hover:bg-green-400 cursor-pointer text-green-900 border-green-200 transition-colors';
+        }
+    };
+
+    // Clases reutilizables para mantener consistencia visual
+    const selectClasses = "bg-white border border-slate-300 text-slate-700 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
+    const loginInputClasses = "w-full px-3 py-2 bg-white border border-slate-300 rounded mb-3 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-slate-400";
+
+    return (
+        <div className="min-h-screen flex flex-col font-sans bg-slate-50">
+            {/* Encabezado principal */}
+            <header className="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-40">
+                <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div>
+                        <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
+                            <Calendar className="w-6 h-6" />
+                            Sala de Petrografía
+                        </h1>
+                        <p className="text-slate-400 text-sm">Sistema de Reserva de Microscopios</p>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        {!isAdmin ? (
+                            <button
+                                onClick={() => setShowAdminLogin(!showAdminLogin)}
+                                className="text-sm bg-slate-800 hover:bg-slate-700 px-3 py-1 rounded border border-slate-700 flex items-center gap-2"
+                            >
+                                <Lock className="w-3 h-3" /> Admin Login
+                            </button>
+                        ) : (
+                            <div className="bg-blue-900 px-3 py-1 rounded text-xs uppercase tracking-wider font-semibold">
+                                Modo Administrador
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </header>
+
+            {/* Modal de acceso admin */}
+            {showAdminLogin && !isAdmin && (
+                <div className="fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center p-4">
+                    <form onSubmit={handleLogin} className="bg-white p-6 rounded shadow-xl w-full max-w-sm animate-fade-in">
+                        <h3 className="text-lg font-bold mb-4 text-slate-800">Acceso Administrativo</h3>
+                        {loginError && (
+                            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded">
+                                {loginError}
+                            </div>
+                        )}
+                        <input
+                            className={loginInputClasses}
+                            placeholder="Usuario"
+                            value={loginUsername}
+                            onChange={e => setLoginUsername(e.target.value)}
+                            disabled={isVerifyingLogin}
+                        />
+                        <input
+                            className={loginInputClasses.replace('mb-3', 'mb-4')}
+                            placeholder="Contraseña"
+                            type="password"
+                            value={loginPassword}
+                            onChange={e => setLoginPassword(e.target.value)}
+                            disabled={isVerifyingLogin}
+                        />
+                        <div className="flex justify-between">
+                            <button type="button" onClick={() => { setShowAdminLogin(false); setLoginError(null); }} className="text-slate-500 hover:text-slate-700" disabled={isVerifyingLogin}>Cancelar</button>
+                            <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition disabled:opacity-50" disabled={isVerifyingLogin}>{isVerifyingLogin ? 'Verificando...' : 'Ingresar'}</button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* Contenido principal */}
+            <main className="flex-grow container mx-auto p-4 md:p-6">
+
+                {isLoading ? (
+                    // Esqueleto de carga
+                    <div className="space-y-4">
+                        <div className="h-20 bg-slate-200 rounded animate-pulse"></div>
+                        <div className="h-96 bg-slate-200 rounded animate-pulse"></div>
+                        <div className="h-96 bg-slate-200 rounded animate-pulse"></div>
+                    </div>
+                ) : apiError ? (
+                    // Banner de error con opcion de reintento
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded shadow-sm flex items-start justify-between">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <p className="font-semibold text-red-800">Error al cargar datos</p>
+                                <p className="text-red-700 text-sm">{apiError}</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => refreshData()}
+                            className="text-red-600 hover:text-red-800 font-semibold text-sm whitespace-nowrap ml-4"
+                        >
+                            Reintentar
+                        </button>
+                    </div>
+                ) : null}
+
+                {isAdmin ? (
+                    <AdminPanel
+                        bookings={bookings}
+                        refreshData={refreshData}
+                        onLogout={() => { clearAdminCredentials(); setIsAdmin(false); setSelectedSlots([]); void loadPublicSettings(); }}
+                    />
+                ) : !isLoading && !apiError ? (
+                    <div className="space-y-6">
+
+                        {/* Barra informativa de reglas y uso */}
+                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded shadow-sm text-sm text-blue-800 flex items-start gap-3">
+                            <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <p className="font-semibold">Horario de Solicitudes:</p>
+                                <p>Lunes 7:00 AM - Viernes 12:00 PM.</p>
+                                <p className="mt-1 font-semibold text-blue-900">Límite para próxima semana: {nextWeekSlotsLimit} turnos.</p>
+                                {!isBookingWindowOpen() && (
+                                    <p className="text-red-600 font-bold mt-1 uppercase">
+                                        Actualmente fuera de horario para nuevas solicitudes.
+                                    </p>
+                                )}
+                                <div className="mt-3 text-blue-900">
+                                    <p className="font-semibold">Instrucciones de uso:</p>
+                                    <ol className="list-decimal list-inside mt-1 space-y-1 text-sm">
+                                        <li>Seleccionar la semana en la que se realizará la solicitud (Esta Semana / Próxima Semana).</li>
+                                        <li>Seleccionar espacio disponible en el calendario.</li>
+                                        <li>Dar clic en “Solicitar Turno(s)” y completar los datos.</li>
+                                        <li>Enviar la solicitud y esperar la aprobación del administrador por correo.</li>
+                                        <li>En caso de no encontrar disponibilidad contacte a los administradores avrincon y/o jlinares.</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Filtros y navegacion semanal */}
+                        <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-white p-4 rounded shadow-sm border border-slate-100">
+
+                            {/* Selector de semana */}
+                            <div className="flex items-center bg-slate-100 rounded-lg p-1">
+                                <button
+                                    onClick={() => { setWeekOffset(0); }}
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${weekOffset === 0 ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                >
+                                    Esta Semana
+                                </button>
+                                <button
+                                    onClick={() => { setWeekOffset(1); }}
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${weekOffset === 1 ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                        }`}
+                                >
+                                    Próxima Semana
+                                </button>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2 items-center">
+                                <div className="flex items-center gap-2 text-slate-500 mr-2">
+                                    <Filter className="w-4 h-4" />
+                                    <span className="text-sm font-semibold uppercase hidden sm:inline">Filtros:</span>
+                                </div>
+                                <select
+                                    className={selectClasses}
+                                    value={filterType}
+                                    onChange={(e) => setFilterType(e.target.value as any)}
+                                >
+                                    <option value="all">Todos los Equipos</option>
+                                    <option value="Microscopio">Microscopios</option>
+                                    <option value="Estereomicroscopio">Estereomicroscopios</option>
+                                </select>
+                                <select
+                                    className={selectClasses}
+                                    value={filterBrand}
+                                    onChange={(e) => setFilterBrand(e.target.value as any)}
+                                >
+                                    <option value="all">Todas las Marcas</option>
+                                    <option value="ZEISS">ZEISS</option>
+                                    <option value="OLYMPUS">OLYMPUS</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Grilla de calendario para todos los dias */}
+                        <div className="space-y-8">
+                            {weekDays.map((day, dayIndex) => {
+                                const dayStr = formatDate(day);
+                                const isToday = formatDate(day) === formatDate(new Date());
+
+                                return (
+                                    <div key={dayIndex} className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                                        <div className={`p-4 border-b border-slate-100 flex items-center gap-2 ${isToday ? 'bg-blue-50' : 'bg-slate-50'}`}>
+                                            <h3 className={`font-bold text-lg capitalize ${isToday ? 'text-blue-700' : 'text-slate-700'}`}>
+                                                {getDayLabel(day)}
+                                            </h3>
+                                            {isToday && (
+                                                <span className="bg-blue-600 text-white text-[10px] uppercase font-bold px-2 py-0.5 rounded-full">Hoy</span>
+                                            )}
+                                        </div>
+
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-max w-full border-collapse">
+                                                <thead>
+                                                    <tr>
+                                                        <th className="bg-white border-b border-r p-2 text-left w-24 text-slate-500 font-semibold text-xs uppercase tracking-wider">
+                                                            Horario
+                                                        </th>
+                                                        {visibleEquipment.map(eq => (
+                                                            <th key={eq.id} className="min-w-[160px] border-b border-r p-2 text-left bg-slate-50/50">
+                                                                <div className="font-bold text-slate-800 text-xs">{eq.name}</div>
+                                                                <div className="text-[10px] text-slate-500 leading-tight">{eq.type} - {eq.brand}</div>
+                                                                <div className="text-[9px] text-slate-500 leading-tight">{eq.obj}</div>
+                                                            </th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {TIME_SLOTS.map((slot) => {
+                                                        // Separador visual para el bloque de mediodia
+                                                        let rowClasses = "border-b border-r p-2 h-16 relative transition-all ";
+
+                                                        if (slot.id === '12:00') rowClasses += "border-t-[3px] border-t-slate-300 ";
+                                                        if (slot.id === '13:00') rowClasses += "border-t-[3px] border-t-slate-300 ";
+
+                                                        return (
+                                                            <tr key={slot.id}>
+                                                                <td className={`bg-white border-b border-r p-2 text-xs font-mono text-slate-600 ${slot.id === '12:00' || slot.id === '13:00' ? 'border-t-[3px] border-t-slate-300' : ''}`}>
+                                                                    {slot.label}
+                                                                </td>
+                                                                {visibleEquipment.map(eq => {
+                                                                    const booking = getBookingForSlot(eq.id, slot.id, dayStr);
+                                                                    const isSelected = isSlotSelected(eq.id, slot.id, dayStr);
+                                                                    const isIndefinitelyBlocked = isSlotBlockedIndefinitely(eq.id, dayStr);
+                                                                    const status = isIndefinitelyBlocked ? 'blocked' : (booking ? booking.status : 'available');
+                                                                    const displayBooking = isIndefinitelyBlocked ? bookings.find(b => b.blockType === 'indefinite' && b.status === 'blocked' && (b.equipmentId === 0 || b.equipmentId === eq.id) && dayStr >= (b.blockStartDate || '')) : booking;
+
+                                                                    return (
+                                                                        <td
+                                                                            key={eq.id}
+                                                                            onClick={() => handleSlotClick(eq.id, slot.id, dayStr)}
+                                                                            className={`${rowClasses} ${getCellColor(status, isSelected)}`}
+                                                                        >
+                                                                            <div className="h-full flex flex-col justify-center text-xs">
+                                                                                {displayBooking && status === 'blocked' ? (
+                                                                                    <div className="flex flex-col items-center opacity-60">
+                                                                                        <Lock className="w-3 h-3 mb-0.5" />
+                                                                                        <span className="text-center leading-tight text-[10px]">{displayBooking.blockedReason || 'No disponible'}</span>
+                                                                                        {isIndefinitelyBlocked && <span className="text-center leading-tight text-[9px] mt-0.5">Indefinido</span>}
+                                                                                    </div>
+                                                                                ) : booking && status !== 'available' ? (
+                                                                                    <div className="px-1">
+                                                                                        <span className="font-bold block truncate text-[11px]">{booking.userName || 'Usuario'}</span>
+                                                                                        <span className="block truncate opacity-80 text-[10px]">{booking.userGroup}</span>
+                                                                                        <span className="block text-[9px] mt-0.5 opacity-70 uppercase tracking-tighter">{status === 'pending' ? 'En espera' : 'Aprobado'}</span>
+                                                                                    </div>
+                                                                                ) : isSelected ? (
+                                                                                    <div className="flex items-center justify-center font-bold text-[10px]">
+                                                                                        Seleccionado
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div className="flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity text-green-800 font-semibold text-[10px]">
+                                                                                        Disponible
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </td>
+                                                                    );
+                                                                })}
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : null}
+            </main>
+
+            {/* Boton flotante para enviar solicitud */}
+            {selectedSlots.length > 0 && (
+                <div className="fixed bottom-6 right-6 z-50 animate-bounce-small">
+                    <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-3 font-bold text-lg transition-transform hover:scale-105"
+                    >
+                        <span>Solicitar {selectedSlots.length} Turno(s)</span>
+                        <div className="bg-white text-blue-600 rounded-full w-6 h-6 flex items-center justify-center text-xs">
+                            {selectedSlots.length}
+                        </div>
+                    </button>
+                </div>
+            )}
+
+            {/* Modal de solicitud de turnos */}
+            <BookingModal
+                isOpen={isModalOpen}
+                selectedCount={selectedSlots.length}
+                onClose={() => setIsModalOpen(false)}
+                onSubmit={handleBookingSubmit}
+                sampleEquipment={selectedSlots.length > 0 ? EQUIPMENT_LIST.find(e => e.id === selectedSlots[0].equipmentId) : undefined}
+            />
+
+            <footer className="bg-slate-100 border-t p-4 text-center text-slate-500 text-xs">
+                &copy; {new Date().getFullYear()} Sala de Petrografía - Dirección de Geociencias Básicas.
+            </footer>
+        </div>
+    );
+};
+
+export default App;
