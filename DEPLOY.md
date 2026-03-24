@@ -1,111 +1,76 @@
-# Guía de Despliegue - Servidor Interno (SGC)
+# 🚀 GUÍA DE DESPLIEGUE EN PRODUCCIÓN
 
-Este documento detalla el procedimiento para configurar y desplegar el proyecto **MicroReserva** en una máquina virtual Linux corporativa. El sistema se compone de una aplicación de React compiada (Vite) y un backend Node.js (Express), apoyados por un proxy reverso Nginx.
+Para desplegar el proyecto en el servidor oficial corporativo del SGC, siga las siguientes pautas de configuración y arranque.
 
-## Requisitos Previos (Infraestructura SGC)
-- Sistema Operativo: Linux (Ubuntu 22.04 LTS / CentOS 8 o superior).
-- **Node.js**: v18.x o v20.x LTS.
-- **Nginx**: Como proxy reverso.
-- **PM2**: Como administrador de procesos persistente para Node.js.
-- Conectividad a la Base de Datos PostgreSQL Corporativa.
-- Conectividad por puerto 587 o 465 al relay SMTP Corporativo.
+## 🏢 Arquitectura de Infraestructura (Servidor SGC)
+El sistema operará sobre una máquina virtual corporativa optimizada con **vSphere HA**, distribuida físicamente de la siguiente manera:
+- **Disco 1 (OS y Aplicación):** Aloja el Sistema Operativo, el motor Node.js, gestor PM2, servidor Proxy (Nginx/IIS) y los binarios/artefactos compilados del aplicativo (Frontend estático y Backend).
+- **Disco 2 (Volumen de Base de Datos):** Disco asignado en Storage Compartido exclusivamente para PostgreSQL (`PGDATA`). Beneficiado por políticas de **Backup Diario** corporativas. 
 
----
+> **Aviso:** Antes de levantar la DB, asegúrese de apuntar la variable `data_directory` en su `postgresql.conf` a la ruta de montaje del Disco 2.
 
-## 1. Descarga y Compilación
+## 1. Inicialización y Migración de Base de Datos (Disco 2)
+- Las estructuras de tabla residen en `schema.sql`.
+- **Importante:** Recuerde que para soportar el Bloqueo por Slot se modificó el Constraint de la DB. Así que, aplique el alter en su DB PostgreSQL si ya existía:
+  ```sql
+  ALTER TABLE bookings DROP CONSTRAINT IF EXISTS bookings_block_type_check;
+  ALTER TABLE bookings ADD CONSTRAINT bookings_block_type_check CHECK (block_type IN ('day', 'slot'));
+  ```
 
-1. Clona el repositorio en el servidor (Ej: `/var/www/microreserva`).
-2. Instala las dependencias y compila el código (Frontend + Backend):
-   ```bash
-   cd /var/www/microreserva
-   npm install
-   npm run build
-   ```
-Esto creará las carpetas:
-- `/dist/` -> Estáticos del frontend.
-- `/server/dist/` -> Transpilables del backend Express.
-
-## 2. Configuración de Entorno
-Copia el archivo `.env.example` y renómbralo a `.env`. 
+## 2. Construcción de Artefactos (Build)
+Debe compilar ambos módulos (Frontend y Backend).
 ```bash
-cp .env.example .env
-nano .env
+# 1. Compilar Backend
+npm run build:backend
+# Esto genera el código transpilado listo para ejecutarse en /server/dist/
+
+# 2. Compilar Frontend
+npm run build
+# Esto empaquetará los asstes minificados en /dist/ (o /build/)
 ```
-Ajusta la URL de la base de datos `DATABASE_URL` y las credenciales `SMTP_*` del SGC.
 
-## 3. Gestor de Procesos de Backend (PM2)
+## 3. Gestor de Procesos (PM2)
+Se ha orquestado el `ecosystem.config.cjs` para un arranque persistente.
 
-Para asegurar que el backend se recupere automáticamente ante posibles reinicios del servidor, ejecutamos:
-
+Para ejecutar en producción:
 ```bash
-# Instalar PM2 a nivel global
-sudo npm install -g pm2
-
-# Arrancar la aplicación usando el archivo de ecosistema incluido
 pm2 start ecosystem.config.cjs
-
-# Guardar y habilitar auto-inicio en reinicios (Systemd)
-pm2 startup systemd
 pm2 save
+pm2 startup
 ```
-> Nota: El backend estará corriendo por defecto en el puerto `3000`. Los logs se encuentran en `/var/www/microreserva/logs/`.
 
----
+Detalles del PM2:
+- El backend corre por el puerto **3000** escuchando APIs.
+- Fuerce expresamente la zona horaria `America/Bogota`.
+- Almacena logs formateados en `YYYY-MM-DD HH:mm -0500` dentro de `./logs/`.
 
-## 4. Configuración del Proxy Reverso (Nginx)
+## 4. Servidor Web Inverso (Nginx/IIS)
+Se recomienda instalar un Server proxy que ofrezca SSL (HTTPS) y redirija el tráfico estático de la react app construida (carpeta build) hacia el usuario, y el uso del segmento API hacia PM2.
 
-Se requiere configurar Nginx para servir los archivos locales de React (HTML, CSS, JS) y dirigir todas las conexiones de la ruta `/api` hacia PM2.
-
-Crea un archivo de configuración en `/etc/nginx/sites-available/microreserva` (o el equivalente en CentOS):
-
+**Ejemplo NGINX:**
 ```nginx
 server {
     listen 80;
     server_name granate.sgc.gov.co;
 
-    # Opcional pero recomendado: Redirigir a HTTPS y usar certificado interno
-    # listen 443 ssl;
-    # ssl_certificate /rutas/a/tus/certificados/granate.crt;
-    # ssl_certificate_key /rutas/a/tus/certificados/granate.key;
-
-    # Encabezados de seguridad para cumplimiento corporativo
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-XSS-Protection "1; mode=block";
-    add_header X-Content-Type-Options "nosniff";
-
-    root /var/www/microreserva/dist;
-    index index.html;
-
-    # 1. Rutas Frontend: Soporte para Single Page Application (React)
+    # Frontend
     location / {
+        root /ruta/al/proyecto/dist;
         try_files $uri $uri/ /index.html;
     }
 
-    # 2. Rutas Backend: Proxy hacia Express.js configurado por PM2
+    # API Route a PM2
     location /api/ {
-        proxy_pass http://127.0.0.0:3000;
+        proxy_pass http://localhost:3000/api/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
         proxy_cache_bypass $http_upgrade;
-        
-        # Pasar IP real (muy util para logs)
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
 
-Habilita y reinicia Nginx:
-```bash
-sudo ln -s /etc/nginx/sites-available/microreserva /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
-## 5. Auditoría y Monitoreo
-
-- **Logs de Aplicación/Errores**: Revisa la carpeta `/logs` del proyecto. Winston crea archivos paralelos de errores críticos y accesos generales en formato JSON.
-- **Status en Tiempo Real**: Ejecuta `pm2 monit` para ver métricas de consumo de CPU/RAM de la API interna.
+## 5. Prevención de Riesgos de Rutas (Legacy `/booking`)
+Parte del front interactuaba originalmente con Servless Functions orientadas a archivos físicos (eg. solicitaba PUT a `/booking?id=X` y no a `/bookings`).
+Para evitar fallas de reestructuracion, el API se ha aprovisionado con Routers Express específicos para ambos esquemas. Cualquier nuevo endpoint debe respetar el enrutador en `server/src/index.ts`.

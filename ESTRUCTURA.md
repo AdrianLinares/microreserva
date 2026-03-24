@@ -1,87 +1,35 @@
-# Estructura del Proyecto
+# 📂 ESTRUCTURA DEL PROYECTO
 
-Este documento te ayuda a ubicar rapidamente donde vive cada responsabilidad del sistema.
+El proyecto se divide de manera lógica dentro del repositorio raíz para un fácil acceso y despliegue integrado (PM2 levanta los distruidos compilados, mientras Nginx/IIS puede servir el front).
 
-## Mapa general
-
+## Árbol de Directorios
 ```text
-microreserva/
-├── index.html
-├── package.json
-├── netlify.toml
-├── schema.sql
-├── src/
-│   ├── main.tsx
-│   ├── App.tsx
-│   ├── constants.ts
-│   ├── types.ts
-│   ├── components/
-│   │   ├── BookingModal.tsx
-│   │   ├── AdminPanel.tsx
-│   │   └── AdminBookingModal.tsx
-│   └── services/
-│       └── api.ts
-├── netlify/
-│   └── functions/
-│       ├── bookings.ts
-│       ├── booking.ts
-│       ├── bookings-swap.ts
-│       ├── settings.ts
-│       └── lib/
-│           └── auth.ts
-└── scripts/
-    └── generate-hash.mjs
+SGC-MICRORESERVA/
+├── public/                # Assets del frontend
+├── src/                   # 📱 CÓDIGO FUENTE FRONTEND (React)
+│   ├── components/        # Componentes UI (AdminPanel, BookingModal)
+│   ├── services/          # Llamadas fetch/Axios a la API (api.ts)
+│   ├── types.ts           # Definiciones estrictas TS compartidas implícitamente
+│   ├── constants.ts       # Lista de Equipos, Horarios permitidos.
+│   ├── App.tsx            # Árbol principal de rutas y contexto
+│   └── main.tsx           # Entrypoint de React
+├── server/                # ⚙️ CÓDIGO FUENTE BACKEND (Express / Node.js)
+│   ├── src/
+│   │   ├── config/        # Setup PostgreSQL, Nodemailer, Logger y Zona Horaria
+│   │   ├── controllers/   # Lógica de Negocio (Reservas, Desbloqueos, Switch turnos)
+│   │   ├── routes/        # Definición de Routers API (`/api/booking`, `/api/bookings`)
+│   │   └── index.ts       # Entrypoint servidor Express
+│   ├── tsconfig.json      # Config de compilación para el backend
+│   └── dist/              # Generado autom. al ejecutar `npm run build:backend`
+├── logs/                  # 📊 Registros y bitácoras generados por Winston/PM2
+├── schema.sql             # Plantilla de creación de Tablas en Postgres Constraint (block_type)
+├── ecosystem.config.cjs   # Configuración de despliegue PM2
+├── package.json           # Dependencias raíz (Frontend y utilitarios)
+└── vite.config.ts         # Configuración del empaquetador Vite
 ```
 
-## Que hace cada carpeta
-
-- src:
-  - Todo lo que corre en navegador (React).
-
-- src/components:
-  - Componentes de interfaz reutilizables.
-
-- src/services:
-  - Capa de acceso a API. Aqui no hay JSX, solo requests y helpers.
-
-- netlify/functions:
-  - Backend serverless. Cada archivo exporta un handler HTTP.
-
-- netlify/functions/lib:
-  - Utilidades compartidas del backend (auth, etc.).
-
-- scripts:
-  - Herramientas manuales para soporte operativo.
-
-## Flujo tecnico de una reserva
-
-1. Usuario hace clic en un slot en src/App.tsx.
-2. Al enviar, se llama api.addBooking en src/services/api.ts.
-3. request llega a netlify/functions/bookings.ts.
-4. bookings.ts valida permisos, limites y conflictos.
-5. Si todo es valido, se guarda en PostgreSQL.
-
-## Donde editar segun necesidad
-
-Cambiar regla de negocio (ej. limite, validaciones):
-- netlify/functions/bookings.ts
-- netlify/functions/settings.ts
-
-Cambiar visual de grilla usuario:
-- src/App.tsx
-
-Cambiar operaciones admin:
-- src/components/AdminPanel.tsx
-- netlify/functions/booking.ts
-- netlify/functions/bookings-swap.ts
-
-Cambiar login admin:
-- src/services/api.ts
-- netlify/functions/lib/auth.ts
-
-## Convenciones recomendadas para nuevos aportes
-
-- Primero valida reglas en backend, luego replica validacion en frontend para UX.
-- Mantener comentarios en espanol tecnico claro.
-- Preferir nombres de funciones explicitos (verbos de accion).
-- Evitar logica de negocio compleja dentro de JSX; mover a helpers.
+## Flujo de Datos (Arquitectura)
+1. **Frontend:** El componente `AdminPanel.tsx` intercepta clicks. Al seleccionar "Bloquear Slot", actualiza y envía vía `POST /api/bookings` o `PUT /api/booking` la solicitud con los identificadores temporales.
+2. **Controlador BD (`server/src/controllers/bookings.ts`):** Identifica e invalida lógicamente colisiones temporales. Gestiona DB Deletes en caso de desbloqueos (status "available").
+3. **Persistencia y Timezone (`index.ts -> db.ts`):** A un nivel de capa del entorno (Node), la variable `TZ=America/Bogota` asegura que la persistencia se hace en hora real de Colombia sobre PostgreSQL.
+4. **Respuesta Visual y Logger:** El logger interno (Winston) registra operaciones a `./logs/combined.log` y el SPA de React se actualiza en memoria sin refresco gracias al polling o promesas asíncronas HTTP.

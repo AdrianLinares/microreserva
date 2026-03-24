@@ -1,3 +1,13 @@
+/**
+ * CONTROLADOR DE RESERVAS (BOOKINGS)
+ * ==================================
+ * Este módulo gestiona las operaciones Core (CRUD) sobre las reservas y bloqueos:
+ * 1. Obtención de slots disponibles/ocupados (GET)
+ * 2. Creación de nuevas reservas comerciales o bloqueos del Administrador (POST)
+ * 3. Actualización de estados o "Desbloqueo" físico mediante deletes de registros (PUT)
+ * 4. Notificaciones automáticas corporativas por Nodemailer al crear/cancelar.
+ */
+
 import { Request, Response } from 'express';
 import { query } from '../config/db.js';
 import logger from '../config/logger.js';
@@ -193,11 +203,11 @@ export const updateBookingStatus = async (req: Request, res: Response): Promise<
                     timestamp = $6
                 WHERE id = $7
             `, [
-                status, 
-                req.body.blockedReason ?? null, 
-                req.body.blockType ?? null, 
-                req.body.blockStartDate ?? null, 
-                req.body.blockEndDate ?? null, 
+                status,
+                req.body.blockedReason ?? null,
+                req.body.blockType ?? null,
+                req.body.blockStartDate ?? null,
+                req.body.blockEndDate ?? null,
                 Date.now(),
                 id
             ]);
@@ -280,7 +290,7 @@ export const updateBookingOrStatus = async (req: Request, res: Response): Promis
 
         if (body.status) {
             let status = body.status;
-            
+
             if (status === 'blocked') {
                 await query(`
                     UPDATE bookings
@@ -292,11 +302,11 @@ export const updateBookingOrStatus = async (req: Request, res: Response): Promis
                         timestamp = $6
                     WHERE id = $7
                 `, [
-                    status, 
-                    body.blockedReason ?? null, 
-                    body.blockType ?? null, 
-                    body.blockStartDate ?? null, 
-                    body.blockEndDate ?? null, 
+                    status,
+                    body.blockedReason ?? null,
+                    body.blockType ?? null,
+                    body.blockStartDate ?? null,
+                    body.blockEndDate ?? null,
                     Date.now(),
                     id
                 ]);
@@ -326,7 +336,7 @@ export const updateBookingOrStatus = async (req: Request, res: Response): Promis
                                 <p>Tu solicitud de reserva para el equipo ${currentBooking.equipment_id} el día ${currentBooking.date} en el horario ${currentBooking.time_slot_id} ha sido <strong>APROBADA</strong>.</p>
                                 <br>
                                 <p>Atentamente,<br>Admin Sala de Petrografía</p>`
-                    }).catch(() => {});
+                    }).catch(() => { });
                 } else if (status === 'available' || status === 'rejected') {
                     sendEmail({
                         to: currentBooking.user_email,
@@ -335,7 +345,7 @@ export const updateBookingOrStatus = async (req: Request, res: Response): Promis
                                 <p>Tu solicitud de reserva para el equipo ${currentBooking.equipment_id} el día ${currentBooking.date} en el horario ${currentBooking.time_slot_id} ha sido <strong>rechazada o cancelada</strong>.</p>
                                 <br>
                                 <p>Atentamente,<br>Admin Sala de Petrografía</p>`
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
             }
 

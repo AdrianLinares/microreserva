@@ -1,172 +1,70 @@
-# MicroReserva
+# SGC-MICRORESERVA - SISTEMA DE GESTIÓN DE LA SALA DE PETROGRAFÍA
 
-Aplicacion para gestionar reservas de la Sala de Petrografia.
+Sistema de agendamiento y reserva de equipos de la Sala de Petrografía del Servicio Geológico Colombiano (SGC). Esta aplicación permite a los investigadores y técnicos reservar equipos específicos por bloques de tiempo (slots horarios), gestionar cancelaciones, notificar automáticamente a los involucrados y bloquear preventivamente turnos por mantenimientos u otras restricciones.
 
-Stack principal:
-- Frontend: React + TypeScript + Vite.
-- Backend: Netlify Functions (Node) + PostgreSQL (Neon).
+## 🚀 Arquitectura del Proyecto
+El sistema ha migrado a un esquema de **Monorepo** compuesto por:
+- **Frontend:** Single Page Application (SPA) en React + Vite + TypeScript.
+- **Backend:** API REST en Node.js + Express (TypeScript), desplegado de manera persistente con PM2.
+- **Base de Datos:** PostgreSQL alojado en servidor interno SGC (esquema multi-disco con vSphere HA, Storage Compartido y backups diarios automatizados).
+- **Notificaciones:** Envío de correos automatizados vía `nodemailer` mediante el SMTP corporativo del SGC.
 
-## Objetivo de esta guia
+---
 
-Este README esta pensado para facilitar la entrada de nuevos colaboradores al proyecto.
-Al terminar de leerlo debes poder:
-- levantar el proyecto en local,
-- entender por donde viajan los datos,
-- ubicar rapido donde editar cada funcionalidad.
+## ✨ Características Principales
+1. **Reserva de Equipos (Slots):** Interfaz gráfica intuitiva dividida en días y slots de horas para agendamiento de equipos (ej. Microscopios, Estereomicroscopios).
+2. **Bloqueo Administrativo:** Los administradores pueden bloquear:
+   - Días completos.
+   - Slot(s) específicos (turnos de 4 horas) independiente por equipo. (Ej. Mantenimiento del Equipo 8 en el turno de la mañana).
+3. **Notificaciones por Correo:** Alerta inmediata a los usuarios tras enviar notificación de cambios (Horario final).
+4. **Zona Horaria Estricta:** El sistema se encuentra parametrizado para manejar, validar y loggear en la zona horaria **America/Bogota** sin depender de la configuración local del sistema operativo subyacente.
 
-## Flujo funcional (vista rapida)
+---
 
-1. Usuario selecciona slots en la grilla.
-2. Frontend envia solicitud a funciones en /.netlify/functions.
-3. Backend valida reglas de negocio y guarda en PostgreSQL.
-4. Admin aprueba, bloquea, libera o mueve reservas desde el panel.
+## 🛠 Entorno de Desarrollo
 
-## Arquitectura en 60 segundos
+### Prerrequisitos
+- Node.js (v18 o superior recomendado)
+- Servidor interno SGC (recursos garantizados, 2 discos)
+- Git/Asure DevOps
 
-Frontend:
-- src/App.tsx: pantalla principal de reservas.
-- src/components/BookingModal.tsx: modal de captura de datos de usuario.
-- src/components/AdminPanel.tsx: panel de administracion.
-- src/services/api.ts: cliente HTTP para hablar con Netlify Functions.
+### Instalación
+1. Clonar el repositorio.
+2. Instalar dependencias tanto en raíz (Frontend) como en `/server` (Backend):
+   ```bash
+   npm install
+   cd server && npm install
+   ```
 
-Backend (serverless):
-- netlify/functions/bookings.ts: listar y crear reservas.
-- netlify/functions/booking.ts: editar estado/slot y eliminar reserva.
-- netlify/functions/bookings-swap.ts: intercambio de slots entre dos reservas.
-- netlify/functions/settings.ts: configuracion admin/publica.
-- netlify/functions/lib/auth.ts: validacion de Basic Auth admin.
+3. Configurar variables de entorno (ver sección Variables de Entorno).
+4. Levantar el proyecto en desarrollo:
+   - **Backend:** `npm run build:backend && node server/dist/index.js` 
+   - **Frontend:** `npm run dev`
 
-## Requisitos
+---
 
-- Node.js 20 o superior.
-- npm 9 o superior.
-- Base de datos PostgreSQL (Neon recomendado).
+## 🔐 Variables de Entorno
 
-## Instalacion local
-
-1. Instalar dependencias:
-
-```bash
-npm install
-```
-
-2. Crear archivo .env con variables minimas:
-
+**Frontend (`.env.local` en raíz):**
 ```env
-DATABASE_URL=postgres://usuario:password@host/db
-ALLOWED_ORIGIN=http://localhost:8888
-ADMIN_USERS=[{"username":"admin","passwordHash":"$2a$12$..."}]
+VITE_API_URL=http://localhost:3000/api
+VITE_ADMIN_EMAILS=admin@sgc.gov.co
 ```
 
-3. Levantar desarrollo:
-
-```bash
-npm run dev
+**Backend (`server/.env` o `.env` en raíz para el inicio):**
+```env
+PORT=3000
+DATABASE_URL=postgres://usuario:pass@host/db?sslmode=require
+SMTP_HOST=smtp.office365.com
+SMTP_PORT=587
+SMTP_USER=correo@sgc.gov.co
+SMTP_PASS=tu_password
+CORS_ORIGIN=http://localhost:5173,http://granate.sgc.gov.co
+LOG_LEVEL=info
+NODE_ENV=development
+TZ=America/Bogota
 ```
 
-Puertos esperados:
-- App + proxy Netlify: http://localhost:8888
-- Vite interno: http://localhost:3000
-
-## Variables de entorno explicadas
-
-- DATABASE_URL:
-  - Conexion a PostgreSQL.
-  - Sin esta variable, las funciones fallan al iniciar.
-
-- ADMIN_USERS:
-  - JSON de usuarios admin con hash bcrypt.
-  - Ejemplo:
-
-```json
-[
-  {
-    "username": "admin",
-    "passwordHash": "$2a$12$..."
-  }
-]
-```
-
-- ALLOWED_ORIGIN:
-  - Dominio permitido para CORS en produccion.
-  - En local, las funciones aceptan origen abierto para facilitar desarrollo.
-
-## Scripts utiles
-
-- npm run dev: desarrollo completo con Netlify Dev.
-- npm run build: build de frontend.
-- npm run preview: probar build local.
-- npm run generate-hash: generar hash bcrypt para ADMIN_USERS.
-
-## Regla de negocio clave
-
-- Ventana de solicitud:
-  - Lunes 07:00 a Viernes 12:00.
-
-- Limite de reservas:
-  - Aplica solo para la proxima semana.
-  - Configurable desde panel admin.
-
-- Estados de reserva:
-  - pending: solicitud pendiente.
-  - approved: aprobada por admin.
-  - blocked: bloqueada por admin.
-  - available: slot libre/placeholder.
-
-## Guia de codigo
-
-Si necesitas cambiar...
-
-- UI de seleccion de turnos:
-  - Revisar src/App.tsx y src/components/BookingModal.tsx.
-
-- Logica de validacion en cliente:
-  - Revisar src/App.tsx (handleSlotClick y handleBookingSubmit).
-
-- Reglas reales de seguridad/negocio:
-  - Revisar netlify/functions/bookings.ts.
-  - Nota: el backend es la fuente de verdad.
-
-- Login admin:
-  - Frontend: src/services/api.ts + src/App.tsx.
-  - Backend: netlify/functions/lib/auth.ts.
-
-- Acciones de administracion:
-  - UI: src/components/AdminPanel.tsx.
-  - Endpoints: netlify/functions/booking.ts, netlify/functions/bookings-swap.ts, netlify/functions/settings.ts.
-
-## Troubleshooting rapido
-
-Error CORS en local:
-- Reinicia npm run dev.
-- Limpia cache de Netlify si hace falta: rm -rf .netlify/cache
-- Verifica que entras por http://localhost:8888
-
-401 Unauthorized en admin:
-- Revisa formato JSON de ADMIN_USERS.
-- Verifica que el hash bcrypt corresponda a la contraseña.
-
-No guarda reservas:
-- Revisa DATABASE_URL.
-- Revisa logs de funciones en terminal de Netlify Dev.
-
-Pantalla en blanco:
-- Revisa consola del navegador.
-- Verifica que Vite y Netlify Dev esten corriendo sin errores.
-
-## Deploy en Netlify
-
-Configuracion actual (netlify.toml):
-- build command: npm run build
-- publish dir: dist
-- functions dir: netlify/functions
-
-Variables minimas en Netlify:
-- DATABASE_URL
-- ADMIN_USERS
-- ALLOWED_ORIGIN
-
-## Estado
-
-- Version: 1.0.0
-- README actualizado: 2026-03-10
+## 📚 Documentación Técnica
+- [Arquitectura (ESTRUCTURA.md)](./ESTRUCTURA.md)
+- [Guía de Despliegue (DEPLOY.md)](./DEPLOY.md)

@@ -3,10 +3,22 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+
+/**
+ * ENTRYPOINT PRINCIPAL DEL BACKEND EXPRESS
+ * =========================================
+ * Este archivo inicializa el servidor backend monolítico para la gestión
+ * de reservas (pasando de Serverless Netlify a PM2 persistente).
+ */
+
+// Configurar Zona Horaria para Colombia antes de inicializar cualquier módulo que dependa de fechas
+// Esto evita desfases temporales con la UI del SGC y logs de PostgreSQL.
+process.env.TZ = 'America/Bogota';
+
 import logger from './config/logger.js';
-// Rutas
+// Rutas de Controladores
 import bookingsRoutes from './routes/bookings.js';
-import bookingRoutes from './routes/booking.js';
+import bookingRoutes from './routes/booking.js'; // Ruta singular para compatibilidad con endpoints Legacy (Update/Delete)
 import bookingsSwapRoutes from './routes/bookingsSwap.js';
 import settingsRoutes from './routes/settings.js';
 

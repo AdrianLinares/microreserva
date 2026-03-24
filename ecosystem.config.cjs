@@ -9,7 +9,8 @@ module.exports = {
       max_memory_restart: '1G',
       env: {
         NODE_ENV: 'production',
-        PORT: 3000
+        PORT: 3000,
+        TZ: 'America/Bogota'
       },
       log_date_format: "YYYY-MM-DD HH:mm Z",
       error_file: "./logs/pm2-error.log",
