@@ -1,6 +1,6 @@
 import { Booking, BookingStatus } from '../types';
 
-const API_URL = (import.meta as any).env.VITE_API_URL || '/.netlify/functions';
+const API_URL = (import.meta as any).env.VITE_API_URL || '/api';
 const ADMIN_TOKEN_KEY = 'micro_admin_token';
 
 /**
@@ -66,22 +66,44 @@ async function request<T>(
         headers,
     });
 
+    const responseText = await response.text();
+    const contentType = response.headers.get('content-type') || '';
+    const isJsonResponse = contentType.toLowerCase().includes('application/json');
+
     if (!response.ok) {
         let errorMessage = `API error: ${response.status} ${response.statusText}`;
-        try {
-            const errorData = await response.json();
-            errorMessage = errorData.error || errorMessage;
-        } catch (e) {
-            // Si el backend no devuelve JSON, usamos texto plano como fallback
-            const text = await response.text();
-            if (text) {
-                errorMessage = text.substring(0, 200);
+
+        if (responseText) {
+            if (isJsonResponse) {
+                try {
+                    const errorData = JSON.parse(responseText) as { error?: string };
+                    errorMessage = errorData.error || errorMessage;
+                } catch {
+                    errorMessage = responseText.substring(0, 200);
+                }
+            } else {
+                errorMessage = responseText.substring(0, 200);
             }
         }
+
         throw new Error(errorMessage);
     }
 
-    return response.json();
+    if (!responseText) {
+        return undefined as T;
+    }
+
+    if (!isJsonResponse) {
+        throw new Error(
+            `Unexpected response format from ${path}. Expected JSON but received ${contentType || 'unknown content type'}.`
+        );
+    }
+
+    try {
+        return JSON.parse(responseText) as T;
+    } catch {
+        throw new Error(`Invalid JSON response from ${path}.`);
+    }
 }
 
 /**
@@ -183,7 +205,18 @@ export interface AdminSettings extends PublicAdminSettings {
  * Lee configuracion completa del panel admin (requiere autenticacion).
  */
 export async function getAdminSettings(): Promise<AdminSettings> {
-    return request('/settings', { method: 'GET' }, true);
+    const data = await request<Partial<AdminSettings>>('/settings', { method: 'GET' }, true);
+
+    // Defensa adicional: si por configuracion del backend devuelve payload publico,
+    // tratamos la respuesta como no autorizada para evitar login falso.
+    if (typeof data.notificationEmail !== 'string' || !Number.isInteger(data.nextWeekSlotsLimit)) {
+        throw new Error('Unauthorized');
+    }
+
+    return {
+        notificationEmail: data.notificationEmail,
+        nextWeekSlotsLimit: data.nextWeekSlotsLimit,
+    };
 }
 
 /**

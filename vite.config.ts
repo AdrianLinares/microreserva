@@ -6,12 +6,19 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
     server: {
-      port: 3000,
+      port: 5173,
       host: '0.0.0.0',
       watch: {
         usePolling: true,
         interval: 200,
       },
+      proxy: {
+        '/api': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+          secure: false,
+        }
+      }
     },
     build: {
       rollupOptions: {
@@ -23,7 +30,7 @@ export default defineConfig(({ mode }) => {
       }
     },
     plugins: [react()],
-    
+
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

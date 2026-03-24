@@ -11,7 +11,7 @@ CREATE TABLE bookings (
   user_email TEXT,
   user_group TEXT,
   blocked_reason TEXT,
-  block_type TEXT CHECK (block_type IS NULL OR block_type IN ('single', 'range', 'indefinite')),
+  block_type TEXT CHECK (block_type IS NULL OR block_type IN ('slot', 'single', 'range', 'indefinite')),
   block_start_date TEXT,
   block_end_date TEXT,
   timestamp BIGINT NOT NULL,
