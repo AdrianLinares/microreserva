@@ -93,8 +93,12 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     });
 });
 
-// Iniciamos el servidor
-app.listen(PORT, () => {
-    logger.info(`🚀 Servidor backend interno corriendo en el puerto ${PORT}`);
-    logger.info(`🔍 Validar en: http://localhost:${PORT}/api/health`);
-});
+// Iniciamos el servidor solo si no estamos en entorno de pruebas
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, () => {
+        logger.info(`🚀 Servidor backend interno corriendo en el puerto ${PORT}`);
+        logger.info(`🔍 Validar en: http://localhost:${PORT}/api/health`);
+    });
+}
+
+export default app;
