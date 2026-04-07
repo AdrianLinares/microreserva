@@ -27,7 +27,7 @@ CREATE TABLE admin_settings (
 
 -- Insert default settings
 INSERT INTO admin_settings (key, value) VALUES ('notification_email', '');
-INSERT INTO admin_settings (key, value) VALUES ('next_week_slots_limit', '6');
+INSERT INTO admin_settings (key, value) VALUES ('next_week_slots_limit', '4');
 
 -- Indexes for performance
 CREATE INDEX idx_bookings_date ON bookings(date);
@@ -35,3 +35,6 @@ CREATE INDEX idx_bookings_equipment_date ON bookings(equipment_id, date);
 CREATE INDEX idx_bookings_status ON bookings(status);
 CREATE INDEX idx_bookings_user_email ON bookings(user_email) WHERE user_email IS NOT NULL;
 CREATE INDEX idx_bookings_indefinite_blocks ON bookings(equipment_id, block_start_date) WHERE block_type = 'indefinite';
+
+-- ALTER TABLE bookings DROP CONSTRAINT bookings_block_type_check;
+-- ALTER TABLE bookings ADD CONSTRAINT bookings_block_type_check CHECK (block_type IS NULL OR block_type IN ('slot', 'single', 'range', 'indefinite'));
