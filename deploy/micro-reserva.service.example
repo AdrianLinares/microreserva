@@ -1,0 +1,19 @@
+[Unit]
+Description=Micro-Reserva API Node.js
+After=network.target
+
+[Service]
+Type=simple
+User=nodeapp
+Group=nodeapp
+WorkingDirectory=/opt/micro-reserva
+EnvironmentFile=/etc/micro-reserva.env
+ExecStart=/usr/bin/node /opt/micro-reserva/server/dist/index.js
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+StandardOutput=syslog
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target
