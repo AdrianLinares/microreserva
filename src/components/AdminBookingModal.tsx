@@ -41,8 +41,9 @@ const AdminBookingModal: React.FC<AdminBookingModalProps> = ({
             return;
         }
 
-        if (!email.includes('@')) {
-            setError('Por favor ingrese un correo electrónico válido.');
+        const emailNormalized = email.trim().toLowerCase();
+        if (!emailNormalized.endsWith('@sgc.gov.co')) {
+            setError('El correo electrónico debe pertenecer al dominio @sgc.gov.co.');
             return;
         }
 
@@ -118,6 +119,8 @@ const AdminBookingModal: React.FC<AdminBookingModalProps> = ({
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             disabled={isLoading}
+                            pattern=".+@sgc\.gov\.co"
+                            title="El correo electrónico debe ser del dominio @sgc.gov.co"
                         />
                     </div>
 
