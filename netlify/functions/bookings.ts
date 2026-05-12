@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Handler } from '@netlify/functions';
 import { neon } from '@neondatabase/serverless';
 import { verifyAdminAuth } from './lib/auth';
@@ -11,6 +12,20 @@ const sql = neon(process.env.DATABASE_URL);
 const DEFAULT_NEXT_WEEK_SLOTS_LIMIT = 6;
 const RATE_LIMIT_WINDOW_MS = 3600000; // 1 hora
 const RATE_LIMIT_MAX_INSERTS = 20;
+
+/**
+ * Genera un codigo alfanumerico de 10 caracteres criptograficamente aleatorio.
+ * Usa crypto.randomBytes para garantizar entropia real.
+ */
+function generateCancellationCode(): string {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const bytes = crypto.randomBytes(10);
+    let code = '';
+    for (let i = 0; i < 10; i++) {
+        code += chars[bytes[i] % chars.length];
+    }
+    return code;
+}
 
 function parseIsoDateToUtc(date: string): Date {
     const [year, month, day] = date.split('-').map(Number);
@@ -281,13 +296,16 @@ const handler: Handler = async (event, context) => {
                 }
             }
 
+            // Generamos codigo unico de cancelacion para el usuario (10 caracteres alfanumericos)
+            const cancellationCode = !isAuthorized ? generateCancellationCode() : undefined;
+
             // UPSERT: inserta o actualiza cuando existe id (caso placeholders available)
             const snake = camelToSnake(booking);
 
             // Ya validamos conflictos arriba, por eso este UPSERT es seguro
             await sql`
-        INSERT INTO bookings (id, equipment_id, date, time_slot_id, status, user_name, user_email, user_group, blocked_reason, block_type, block_start_date, block_end_date, timestamp)
-        VALUES (${snake.id}, ${snake.equipment_id}, ${snake.date}, ${snake.time_slot_id}, ${snake.status}, ${snake.user_name}, ${snake.user_email}, ${snake.user_group}, ${snake.blocked_reason}, ${snake.block_type}, ${snake.block_start_date}, ${snake.block_end_date}, ${snake.timestamp})
+        INSERT INTO bookings (id, equipment_id, date, time_slot_id, status, user_name, user_email, user_group, blocked_reason, block_type, block_start_date, block_end_date, cancellation_code, timestamp)
+        VALUES (${snake.id}, ${snake.equipment_id}, ${snake.date}, ${snake.time_slot_id}, ${snake.status}, ${snake.user_name}, ${snake.user_email}, ${snake.user_group}, ${snake.blocked_reason}, ${snake.block_type}, ${snake.block_start_date}, ${snake.block_end_date}, ${cancellationCode ?? null}, ${snake.timestamp})
         ON CONFLICT (id) 
         DO UPDATE SET 
             equipment_id = EXCLUDED.equipment_id,
@@ -301,13 +319,14 @@ const handler: Handler = async (event, context) => {
             block_type = EXCLUDED.block_type,
             block_start_date = EXCLUDED.block_start_date,
             block_end_date = EXCLUDED.block_end_date,
+            cancellation_code = EXCLUDED.cancellation_code,
             timestamp = EXCLUDED.timestamp
       `;
 
             return {
                 statusCode: 201,
                 headers: getCorsHeaders(),
-                body: JSON.stringify({ success: true }),
+                body: JSON.stringify({ success: true, cancellationCode }),
             };
         }
 

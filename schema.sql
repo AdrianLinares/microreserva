@@ -14,9 +14,12 @@ CREATE TABLE bookings (
   block_type TEXT CHECK (block_type IS NULL OR block_type IN ('slot', 'single', 'range', 'indefinite')),
   block_start_date TEXT,
   block_end_date TEXT,
+  cancellation_code TEXT,
   timestamp BIGINT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE INDEX idx_bookings_cancellation_code ON bookings(cancellation_code) WHERE cancellation_code IS NOT NULL;
 
 -- Admin settings table
 CREATE TABLE admin_settings (
