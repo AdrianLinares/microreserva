@@ -115,6 +115,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
         }
     };
 
+    const [approveAllLoading, setApproveAllLoading] = useState(false);
+
+    const handleApproveAllPending = async () => {
+        const count = pendingBookings.length;
+        if (count === 0) return;
+        if (!window.confirm(`¿Aprobar las ${count} solicitudes pendientes de una sola vez?`)) return;
+
+        setApproveAllLoading(true);
+        try {
+            await Promise.all(pendingBookings.map(b => api.updateBookingStatus(b.id, 'approved')));
+            await refreshData();
+            alert(`Se aprobaron ${count} solicitudes correctamente.`);
+        } catch (error) {
+            alert('Error al aprobar: ' + (error instanceof Error ? error.message : 'Unknown error'));
+        } finally {
+            setApproveAllLoading(false);
+        }
+    };
+
     const handleStatusChange = async (bookingId: string, newStatus: 'approved' | 'available' | 'blocked') => {
         try {
             if (newStatus === 'available') {
@@ -686,7 +705,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
                 {/* Solicitudes pendientes */}
                 <div>
-                    <h3 className="text-lg font-semibold mb-4 text-amber-600">Solicitudes Pendientes ({pendingBookings.length})</h3>
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-amber-600">Solicitudes Pendientes ({pendingBookings.length})</h3>
+                        {pendingBookings.length > 0 && (
+                            <button
+                                onClick={handleApproveAllPending}
+                                disabled={approveAllLoading}
+                                className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white text-xs px-3 py-1.5 rounded font-semibold transition-colors"
+                            >
+                                {approveAllLoading ? 'Aprobando...' : `Aprobar Todas (${pendingBookings.length})`}
+                            </button>
+                        )}
+                    </div>
                     <div className="space-y-3 max-h-[500px] overflow-y-auto">
                         {pendingBookings.length === 0 ? (
                             <p className="text-slate-400 italic">No hay solicitudes pendientes.</p>
@@ -876,7 +906,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                             <p className="font-medium mb-1">{selectedBlockSlots.length} turno(s) seleccionado(s):</p>
                                             <div className="bg-white rounded p-2 max-h-40 overflow-y-auto">
                                                 {selectedBlockSlots.map((slot, idx) => (
-                                                    <div key={idx} className="text-xs py-1 border-b border-blue-100 last:border-b-0">
+                                                    <div key={`${slot.date}-${slot.equipmentId}-${slot.timeSlotId}`} className="text-xs py-1 border-b border-blue-100 last:border-b-0">
                                                         📅 {new Date(slot.date).toLocaleDateString('es-ES')} |
                                                         🔬 MESA {slot.equipmentId} |
                                                         🕐 {TIME_SLOTS.find(t => t.id === slot.timeSlotId)?.label || slot.timeSlotId}
@@ -1111,8 +1141,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                         <div className="space-y-4">
                             {editingBooking.status !== 'blocked' ? (
                                 <div className="bg-blue-50 p-3 rounded text-sm text-blue-800 mb-2">
-                                    Solicitante: <strong>{editingBooking.userName}</strong>
-                                    <div className="text-xs mt-1 text-blue-600">Grupo: {editingBooking.userGroup}</div>
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            Solicitante: <strong>{editingBooking.userName}</strong>
+                                            <div className="text-xs mt-1 text-blue-600">Grupo: {editingBooking.userGroup}</div>
+                                        </div>
+                                        {editingBooking.status === 'pending' && (
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        await api.updateBookingStatus(editingBooking.id, 'approved');
+                                                        setEditingBooking(null);
+                                                        await refreshData();
+                                                    } catch (e) {
+                                                        alert('Error al aprobar: ' + (e instanceof Error ? e.message : 'Unknown error'));
+                                                    }
+                                                }}
+                                                className="bg-green-600 hover:bg-green-700 text-white text-xs px-4 py-2 rounded font-semibold transition-colors whitespace-nowrap"
+                                            >
+                                                Aprobar Solicitud
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             ) : (
                                 <div className="bg-slate-100 p-3 rounded text-sm text-slate-700 mb-2 flex items-center gap-2">
@@ -1127,7 +1177,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                     type="date"
                                     className={inputClasses}
                                     value={editForm.date}
-                                    onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                                    onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
                                 />
                             </div>
 
@@ -1136,7 +1186,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                 <select
                                     className={inputClasses}
                                     value={editForm.equipmentId}
-                                    onChange={(e) => setEditForm({ ...editForm, equipmentId: Number(e.target.value) })}
+                                    onChange={(e) => setEditForm(prev => ({ ...prev, equipmentId: Number(e.target.value) }))}
                                 >
                                     {EQUIPMENT_LIST.map(eq => (
                                         <option key={eq.id} value={eq.id}>{eq.name} - {eq.brand}</option>
@@ -1149,7 +1199,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                 <select
                                     className={inputClasses}
                                     value={editForm.timeSlotId}
-                                    onChange={(e) => setEditForm({ ...editForm, timeSlotId: e.target.value })}
+                                    onChange={(e) => setEditForm(prev => ({ ...prev, timeSlotId: e.target.value }))}
                                 >
                                     {TIME_SLOTS.map(slot => (
                                         <option key={slot.id} value={slot.id}>{slot.label}</option>

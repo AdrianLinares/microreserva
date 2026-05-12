@@ -96,17 +96,29 @@ export async function getBookings(): Promise<Booking[]> {
 }
 
 /**
- * Crea una reserva nueva.
+ * Crea una reserva nueva. Devuelve el codigo de cancelacion si la solicitud
+ * fue creada sin autenticacion admin (usuario normal).
  */
-export async function addBooking(booking: Booking): Promise<void> {
+export async function addBooking(booking: Booking): Promise<{ cancellationCode?: string }> {
     const shouldRequireAuth =
         booking.status !== 'pending' ||
         Boolean(booking.blockedReason || booking.blockType || booking.blockStartDate || booking.blockEndDate);
 
-    await request('/bookings', {
+    return request<{ cancellationCode?: string }>('/bookings', {
         method: 'POST',
         body: JSON.stringify(booking),
     }, shouldRequireAuth);
+}
+
+/**
+ * Cancela una reserva usando el codigo unico recibido al solicitarla.
+ * El email se usa como segundo factor de autenticacion (case-insensitive).
+ */
+export async function cancelBookingByCode(code: string, email: string): Promise<void> {
+    await request('/cancel-by-code', {
+        method: 'POST',
+        body: JSON.stringify({ code, email }),
+    });
 }
 
 /**

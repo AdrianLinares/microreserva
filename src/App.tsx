@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { EQUIPMENT_LIST, TIME_SLOTS } from './constants';
-import { generateWeekDays, getBookings, addBooking, saveAdminCredentials, clearAdminCredentials, getAdminSettings, getPublicSettings } from './services/api';
+import { generateWeekDays, getBookings, addBooking, cancelBookingByCode, saveAdminCredentials, clearAdminCredentials, getAdminSettings, getPublicSettings } from './services/api';
 import { Booking, BookingStatus } from './types';
 import BookingModal from './components/BookingModal';
 import AdminPanel from './components/AdminPanel';
-import { User, Lock, Calendar, Clock, Filter, AlertCircle, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { User, Lock, Calendar, Clock, Filter, AlertCircle, Info, ChevronLeft, ChevronRight, Copy, Check, X } from 'lucide-react';
+import { Agentation } from 'agentation';
 
 // Utilidades de calendario y reglas de negocio
 const isBookingWindowOpen = () => {
@@ -76,6 +77,16 @@ const App: React.FC = () => {
     const [loginPassword, setLoginPassword] = useState('');
     const [loginError, setLoginError] = useState<string | null>(null);
     const [isVerifyingLogin, setIsVerifyingLogin] = useState(false);
+
+    // Estado para codigos de cancelacion y modal de cancelacion
+    const [lastCancellationCodes, setLastCancellationCodes] = useState<Array<{ code: string; date: string; timeSlotId: string; equipmentId: number }>>([]);
+    const [codesCopied, setCodesCopied] = useState(false);
+    const [showCancelModal, setShowCancelModal] = useState(false);
+    const [cancelCodeInput, setCancelCodeInput] = useState('');
+    const [cancelEmailInput, setCancelEmailInput] = useState('');
+    const [cancelStatus, setCancelStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+    const [cancelMessage, setCancelMessage] = useState('');
+
     const isSyncingRef = useRef(false);
 
     // Helper para refrescar reservas desde backend
@@ -283,11 +294,25 @@ const App: React.FC = () => {
         });
 
         try {
-            await Promise.all(newBookings.map(b => addBooking(b)));
+            const results = await Promise.all(newBookings.map(b => addBooking(b)));
+            const codes = results
+                .map((r, i) => ({ code: r.cancellationCode, slot: selectedSlots[i] }))
+                .filter((entry): entry is { code: string; slot: { date: string; timeSlotId: string; equipmentId: number } } => Boolean(entry.code))
+                .map(entry => ({
+                    code: entry.code,
+                    date: entry.slot.date,
+                    timeSlotId: entry.slot.timeSlotId,
+                    equipmentId: entry.slot.equipmentId,
+                }));
             await refreshData();
             setSelectedSlots([]);
             setIsModalOpen(false);
-            alert("Solicitud enviada con éxito. Esperando aprobación del administrador.");
+            if (codes.length > 0) {
+                setLastCancellationCodes(codes);
+                setCodesCopied(false);
+            } else {
+                alert("Solicitud enviada con éxito. Esperando aprobación del administrador.");
+            }
         } catch (e: any) {
             alert("Error al reservar: " + e.message);
         }
@@ -438,27 +463,42 @@ const App: React.FC = () => {
                     <div className="space-y-6">
 
                         {/* Barra informativa de reglas y uso */}
-                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded shadow-sm text-sm text-blue-800 flex items-start gap-3">
-                            <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                            <div>
-                                <p className="font-semibold">Horario de Solicitudes:</p>
-                                <p>Lunes 7:00 AM - Viernes 12:00 PM.</p>
-                                <p className="mt-1 font-semibold text-blue-900">Límite para próxima semana: {nextWeekSlotsLimit} turnos.</p>
-                                {!isBookingWindowOpen() && (
-                                    <p className="text-red-600 font-bold mt-1 uppercase">
-                                        Actualmente fuera de horario para nuevas solicitudes.
-                                    </p>
-                                )}
-                                <div className="mt-3 text-blue-900">
-                                    <p className="font-semibold">Instrucciones de uso:</p>
-                                    <ol className="list-decimal list-inside mt-1 space-y-1 text-sm">
-                                        <li>Seleccionar la semana en la que se realizará la solicitud (Esta Semana / Próxima Semana).</li>
-                                        <li>Seleccionar espacio disponible en el calendario.</li>
-                                        <li>Dar clic en “Solicitar Turno(s)” y completar los datos.</li>
-                                        <li>Enviar la solicitud y esperar la aprobación del administrador por correo.</li>
-                                        <li>En caso de no encontrar disponibilidad contacte a los administradores avrincon y/o jlinares.</li>
-                                    </ol>
+                        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded shadow-sm text-sm text-blue-800 flex flex-col gap-3">
+                            <div className="flex items-start gap-3">
+                                <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-semibold">Horario de Solicitudes:</p>
+                                    <p>Lunes 7:00 AM - Viernes 12:00 PM.</p>
+                                    <p className="mt-1 font-semibold text-blue-900">Límite para próxima semana: {nextWeekSlotsLimit} turnos.</p>
+                                    {!isBookingWindowOpen() && (
+                                        <p className="text-red-600 font-bold mt-1 uppercase">
+                                            Actualmente fuera de horario para nuevas solicitudes.
+                                        </p>
+                                    )}
+                                    <div className="mt-3 text-blue-900">
+                                        <p className="font-semibold">Instrucciones de uso:</p>
+                                        <ol className="list-decimal list-inside mt-1 space-y-1 text-sm">
+                                            <li>Seleccionar la semana en la que se realizará la solicitud (Esta Semana / Próxima Semana).</li>
+                                            <li>Seleccionar espacio disponible en el calendario.</li>
+                                            <li>Dar clic en "Solicitar Turno(s)" y completar los datos.</li>
+                                            <li>Enviar la solicitud y esperar la aprobación del administrador por correo.</li>
+                                            <li>Si necesitás cancelar, usá el código único que recibiste al solicitar desde la opción <strong>"Cancelar Turno(s)"</strong> más abajo.</li>
+                                            <li>En caso de no encontrar disponibilidad contacte a los administradores avrincon y/o jlinares.</li>
+                                        </ol>
+                                    </div>
                                 </div>
+                            </div>
+                            <div className="border-t border-blue-200 pt-3">
+                                <button
+                                    onClick={() => setShowCancelModal(true)}
+                                    className="flex items-center gap-2 text-red-700 hover:text-blue-900 font-semibold transition-colors"
+                                >
+                                    <X className="w-4 h-4 text-red-700" />
+                                    Cancelar Turno(s)
+                                </button>
+                                <p className="text-xs text-red-600 mt-1 ml-6">
+                                    Si ya solicitaste un turno, usa el código único que copiaste para cancelarlo.
+                                </p>
                             </div>
                         </div>
 
@@ -632,9 +672,217 @@ const App: React.FC = () => {
                 sampleEquipment={selectedSlots.length > 0 ? EQUIPMENT_LIST.find(e => e.id === selectedSlots[0].equipmentId) : undefined}
             />
 
+            {/* Modal de codigos de cancelacion (se muestra tras enviar solicitud) */}
+            {lastCancellationCodes.length > 0 && (
+                <div className="fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md animate-fade-in p-6">
+                        <div className="flex items-start gap-3 mb-4">
+                            <div className="bg-green-100 rounded-full p-2">
+                                <Check className="w-5 h-5 text-green-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">Solicitud Enviada</h3>
+                                <p className="text-sm text-slate-600 mt-1">
+                                    {lastCancellationCodes.length} turno(s) solicitado(s). Guarda este código para cancelar si es necesario:
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                    {lastCancellationCodes.length > 1 ? 'Códigos de Cancelación' : 'Código de Cancelación'}
+                                </span>
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            const text = lastCancellationCodes
+                                                .map(entry => {
+                                                    const eq = EQUIPMENT_LIST.find(e => e.id === entry.equipmentId);
+                                                    const dayLabel = new Date(entry.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+                                                    const timeLabel = TIME_SLOTS.find(t => t.id === entry.timeSlotId)?.label || entry.timeSlotId;
+                                                    return `${dayLabel} ${timeLabel} (${eq?.name || `MESA ${entry.equipmentId}`}): ${entry.code}`;
+                                                })
+                                                .join('\n');
+                                            await navigator.clipboard.writeText(text);
+                                            setCodesCopied(true);
+                                            setTimeout(() => setCodesCopied(false), 2000);
+                                        } catch { /* fallback silencioso */ }
+                                    }}
+                                    className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded transition-colors ${codesCopied ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}
+                                >
+                                    {codesCopied ? (
+                                        <><Check className="w-3 h-3" /> Copiado</>
+                                    ) : (
+                                        <><Copy className="w-3 h-3" /> Copiar todo</>
+                                    )}
+                                </button>
+                            </div>
+                            <div className="space-y-3">
+                                {lastCancellationCodes.map((entry, idx) => {
+                                    const eq = EQUIPMENT_LIST.find(e => e.id === entry.equipmentId);
+                                    const dayLabel = new Date(entry.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+                                    const timeLabel = TIME_SLOTS.find(t => t.id === entry.timeSlotId)?.label || entry.timeSlotId;
+                                    return (
+                                        <div key={idx} className="bg-white border border-slate-200 rounded-lg p-3">
+                                            <div className="flex items-start justify-between gap-2 mb-1">
+                                                <p className="text-sm font-semibold text-slate-700">
+                                                    {dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1)}
+                                                </p>
+                                                <button
+                                                    onClick={async () => {
+                                                        try {
+                                                            await navigator.clipboard.writeText(entry.code);
+                                                            setCodesCopied(true);
+                                                            setTimeout(() => setCodesCopied(false), 2000);
+                                                        } catch { /* fallback */ }
+                                                    }}
+                                                    className="text-blue-600 hover:text-blue-800 flex-shrink-0"
+                                                    title="Copiar código"
+                                                >
+                                                    <Copy className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                            <p className="text-xs text-slate-500 mb-2">
+                                                {timeLabel} · {eq?.name || `MESA ${entry.equipmentId}`}
+                                            </p>
+                                            <code className="block text-xs font-mono text-slate-800 bg-slate-100 rounded px-2 py-1.5 break-all select-all">
+                                                {entry.code}
+                                            </code>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            <p className="text-xs text-slate-500 mt-3">
+                                {lastCancellationCodes.length > 1
+                                    ? 'Cada código corresponde a un turno específico. Copiá el que necesites para cancelar.'
+                                    : 'Este código es único e intransferible. No lo compartas.'}
+                            </p>
+                        </div>
+
+                        <div className="flex justify-end">
+                            <button
+                                onClick={() => setLastCancellationCodes([])}
+                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
+                            >
+                                Entendido
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de cancelacion de turnos */}
+            {showCancelModal && (
+                <div className="fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md animate-fade-in p-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-slate-800">Cancelar Turno</h3>
+                            <button type="button" onClick={() => { setShowCancelModal(false); setCancelStatus('idle'); setCancelMessage(''); }} className="text-slate-400 hover:text-slate-600">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {cancelStatus === 'success' ? (
+                            <div>
+                                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4 flex items-start gap-3">
+                                    <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="font-semibold text-green-800">Turno cancelado exitosamente</p>
+                                        <p className="text-sm text-green-700 mt-1">{cancelMessage}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => { setShowCancelModal(false); setCancelStatus('idle'); setCancelMessage(''); }}
+                                    className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm font-medium"
+                                >
+                                    Cerrar
+                                </button>
+                            </div>
+                        ) : (
+                            <form onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (!cancelCodeInput.trim() || !cancelEmailInput.trim()) return;
+
+                                setCancelStatus('loading');
+                                setCancelMessage('');
+                                try {
+                                    await cancelBookingByCode(cancelCodeInput.trim(), cancelEmailInput.trim());
+                                    setCancelStatus('success');
+                                    setCancelMessage('El turno ha sido liberado. El horario vuelve a estar disponible.');
+                                    await refreshData();
+                                } catch (err) {
+                                    setCancelStatus('error');
+                                    setCancelMessage(err instanceof Error ? err.message : 'Error al cancelar el turno');
+                                }
+                            }}>
+                                <div className="space-y-4">
+                                    <p className="text-sm text-slate-600">
+                                        Ingresá el código único que recibiste al solicitar el turno y el email con el que lo solicitaste.
+                                    </p>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Código de Cancelación</label>
+                                        <input
+                                            type="text"
+                                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-slate-400 font-mono"
+                                            placeholder="Pegá el código aquí"
+                                            value={cancelCodeInput}
+                                            onChange={(e) => setCancelCodeInput(e.target.value)}
+                                            disabled={cancelStatus === 'loading'}
+                                            required
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                                        <input
+                                            type="email"
+                                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-slate-400"
+                                            placeholder="El email que usaste al solicitar"
+                                            value={cancelEmailInput}
+                                            onChange={(e) => setCancelEmailInput(e.target.value)}
+                                            disabled={cancelStatus === 'loading'}
+                                            required
+                                        />
+                                        <p className="text-xs text-slate-500 mt-1">No diferencia mayúsculas/minúsculas.</p>
+                                    </div>
+
+                                    {cancelStatus === 'error' && cancelMessage && (
+                                        <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded text-sm">
+                                            {cancelMessage}
+                                        </div>
+                                    )}
+
+                                    <div className="flex justify-end gap-3 pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowCancelModal(false); setCancelStatus('idle'); setCancelMessage(''); }}
+                                            disabled={cancelStatus === 'loading'}
+                                            className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded transition-colors text-sm disabled:opacity-50"
+                                        >
+                                            Volver
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            disabled={cancelStatus === 'loading' || !cancelCodeInput.trim() || !cancelEmailInput.trim()}
+                                            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium disabled:opacity-50"
+                                        >
+                                            {cancelStatus === 'loading' ? 'Cancelando...' : 'Cancelar Turno'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        )}
+                    </div>
+                </div>
+            )}
+
             <footer className="bg-slate-100 border-t p-4 text-center text-slate-500 text-xs">
                 &copy; {new Date().getFullYear()} Sala de Petrografía - Dirección de Geociencias Básicas.
             </footer>
+
+            {import.meta.env.DEV && <Agentation />}
         </div>
     );
 };
