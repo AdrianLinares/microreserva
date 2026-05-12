@@ -7,14 +7,14 @@ vi.mock('@neondatabase/serverless', () => ({
   neon: vi.fn(() => sqlMock),
 }));
 
-vi.mock('./lib/auth', () => ({
+vi.mock('../lib/auth', () => ({
   verifyAdminAuth: (...args: unknown[]) => verifyAdminAuthMock(...args),
 }));
 
 async function loadHandler() {
   process.env.DATABASE_URL = 'postgres://test';
   vi.resetModules();
-  const mod = await import('./booking');
+  const mod = await import('../booking');
   return mod.handler;
 }
 

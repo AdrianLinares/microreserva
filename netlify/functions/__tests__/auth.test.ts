@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { compare } from 'bcryptjs';
-import { verifyAdminAuth } from './auth';
+import { verifyAdminAuth } from '../lib/auth';
 
 vi.mock('bcryptjs', () => ({
   compare: vi.fn(),
