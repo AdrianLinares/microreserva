@@ -27,6 +27,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
+    "agentation": "^3.0.2",
     "jsdom": "^26.1.0",
     "netlify-cli": "^17.35.0",
     "typescript": "~5.8.2",

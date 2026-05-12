@@ -5,6 +5,7 @@ import { Booking, BookingStatus } from './types';
 import BookingModal from './components/BookingModal';
 import AdminPanel from './components/AdminPanel';
 import { User, Lock, Calendar, Clock, Filter, AlertCircle, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Agentation } from 'agentation';
 
 // Utilidades de calendario y reglas de negocio
 const isBookingWindowOpen = () => {
@@ -635,6 +636,8 @@ const App: React.FC = () => {
             <footer className="bg-slate-100 border-t p-4 text-center text-slate-500 text-xs">
                 &copy; {new Date().getFullYear()} Sala de Petrografía - Dirección de Geociencias Básicas.
             </footer>
+
+            {import.meta.env.DEV && <Agentation />}
         </div>
     );
 };

@@ -88,7 +88,7 @@ const AdminBookingModal: React.FC<AdminBookingModalProps> = ({
                                 {selectedSlots.map((slot, idx) => {
                                     const equipment = EQUIPMENT_LIST.find(e => e.id === slot.equipmentId);
                                     return (
-                                        <li key={idx}>
+                                        <li key={`${slot.date}-${slot.equipmentId}-${slot.timeSlotId}`}>
                                             {slot.date} - {equipment?.name || `Equipo ${slot.equipmentId}`}
                                         </li>
                                     );
