@@ -699,7 +699,7 @@ const App: React.FC = () => {
                                             const text = lastCancellationCodes
                                                 .map(entry => {
                                                     const eq = EQUIPMENT_LIST.find(e => e.id === entry.equipmentId);
-                                                    const dayLabel = new Date(entry.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+                                                    const dayLabel = parseIsoDateLocal(entry.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
                                                     const timeLabel = TIME_SLOTS.find(t => t.id === entry.timeSlotId)?.label || entry.timeSlotId;
                                                     return `${dayLabel} ${timeLabel} (${eq?.name || `MESA ${entry.equipmentId}`}): ${entry.code}`;
                                                 })
@@ -721,7 +721,7 @@ const App: React.FC = () => {
                             <div className="space-y-3">
                                 {lastCancellationCodes.map((entry, idx) => {
                                     const eq = EQUIPMENT_LIST.find(e => e.id === entry.equipmentId);
-                                    const dayLabel = new Date(entry.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+                                    const dayLabel = parseIsoDateLocal(entry.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
                                     const timeLabel = TIME_SLOTS.find(t => t.id === entry.timeSlotId)?.label || entry.timeSlotId;
                                     return (
                                         <div key={idx} className="bg-white border border-slate-200 rounded-lg p-3">

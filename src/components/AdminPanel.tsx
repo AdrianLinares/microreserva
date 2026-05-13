@@ -353,10 +353,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
             let datesToBlock: string[] = [];
             if (blockType === 'single') {
                 datesToBlock = [blockStartDate];
-                blockMessage = `Se bloqueó el ${new Date(blockStartDate).toLocaleDateString('es-ES')}`;
+                blockMessage = `Se bloqueó el ${parseIsoDateLocal(blockStartDate).toLocaleDateString('es-ES')}`;
             } else if (blockType === 'range') {
                 datesToBlock = getDateRange(blockStartDate, blockEndDate);
-                blockMessage = `Se bloqueó desde ${new Date(blockStartDate).toLocaleDateString('es-ES')} hasta ${new Date(blockEndDate).toLocaleDateString('es-ES')}`;
+                blockMessage = `Se bloqueó desde ${parseIsoDateLocal(blockStartDate).toLocaleDateString('es-ES')} hasta ${parseIsoDateLocal(blockEndDate).toLocaleDateString('es-ES')}`;
             } else if (blockType === 'indefinite') {
                 // Para indefinido creamos un registro "maestro" con timeSlotId=all
                 const id = `indefinite-${blockStartDate}-${blockEquipmentId}-${timestamp}`;
@@ -379,7 +379,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                         blockStartDate: blockStartDate
                     });
                 }
-                blockMessage = `Se bloqueó indefinidamente a partir del ${new Date(blockStartDate).toLocaleDateString('es-ES')} (${blockEquipmentId === 'all' ? 'Todos los equipos' : 'Equipo seleccionado'})`;
+                blockMessage = `Se bloqueó indefinidamente a partir del ${parseIsoDateLocal(blockStartDate).toLocaleDateString('es-ES')} (${blockEquipmentId === 'all' ? 'Todos los equipos' : 'Equipo seleccionado'})`;
             } else if (blockType === 'slot') {
                 // Bloqueo de turnos individuales seleccionados
                 let successCount = 0;
@@ -907,7 +907,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                                             <div className="bg-white rounded p-2 max-h-40 overflow-y-auto">
                                                 {selectedBlockSlots.map((slot, idx) => (
                                                     <div key={`${slot.date}-${slot.equipmentId}-${slot.timeSlotId}`} className="text-xs py-1 border-b border-blue-100 last:border-b-0">
-                                                        📅 {new Date(slot.date).toLocaleDateString('es-ES')} |
+                                                        📅 {parseIsoDateLocal(slot.date).toLocaleDateString('es-ES')} |
                                                         🔬 MESA {slot.equipmentId} |
                                                         🕐 {TIME_SLOTS.find(t => t.id === slot.timeSlotId)?.label || slot.timeSlotId}
                                                     </div>
