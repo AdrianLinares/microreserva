@@ -5,8 +5,10 @@ import {
   deleteBooking,
   getAdminSettings,
   getBookings,
+  getHolidays,
   getPublicSettings,
   saveAdminCredentials,
+  saveHolidays,
 } from './api';
 
 const bookingBase = {
@@ -88,5 +90,40 @@ describe('api service', () => {
     clearAdminCredentials();
 
     expect(sessionStorage.getItem('micro_admin_token')).toBeNull();
+  });
+
+  it('returns holidays from public settings', async () => {
+    const holidays = [{ date: '2026-01-01', name: 'Año Nuevo' }];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      createOkResponse({ nextWeekSlotsLimit: 6, holidays })
+    );
+
+    const result = await getHolidays();
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('/settings');
+    expect(result).toEqual(holidays);
+  });
+
+  it('sends holidays array on authenticated PUT', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(createOkResponse({ success: true }));
+    saveAdminCredentials('admin', 'secret');
+    const holidays = [{ date: '2026-01-01', name: 'Año Nuevo' }];
+
+    await saveHolidays(holidays);
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const [, options] = fetchSpy.mock.calls[0];
+    expect((options as RequestInit).method).toBe('PUT');
+    expect((options as RequestInit).headers).toMatchObject({
+      Authorization: 'Basic YWRtaW46c2VjcmV0',
+    });
+    expect(JSON.parse((options as RequestInit).body as string)).toEqual({ holidays });
+  });
+
+  it('throws when saving holidays without admin credentials', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(createOkResponse());
+
+    await expect(saveHolidays([])).rejects.toThrow('Admin credentials not found');
   });
 });
