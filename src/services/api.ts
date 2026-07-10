@@ -1,4 +1,4 @@
-import { Booking, BookingStatus } from '../types';
+import { Booking, BookingStatus, HolidayEntry } from '../types';
 
 const API_URL = (import.meta as any).env.VITE_API_URL || '/.netlify/functions';
 const ADMIN_TOKEN_KEY = 'micro_admin_token';
@@ -185,6 +185,7 @@ export async function swapBookingSlots(firstId: string, secondId: string): Promi
 
 export interface PublicAdminSettings {
     nextWeekSlotsLimit: number;
+    holidays: HolidayEntry[];
 }
 
 export interface AdminSettings extends PublicAdminSettings {
@@ -206,13 +207,28 @@ export async function getPublicSettings(): Promise<PublicAdminSettings> {
 }
 
 /**
+ * Lee la lista de dias festivos configurados (sin autenticacion).
+ */
+export async function getHolidays(): Promise<HolidayEntry[]> {
+    const settings = await getPublicSettings();
+    return settings.holidays || [];
+}
+
+/**
  * Guarda configuracion del panel admin.
  */
-export async function saveAdminSettings(settings: { notificationEmail?: string; nextWeekSlotsLimit?: number }): Promise<void> {
+export async function saveAdminSettings(settings: { notificationEmail?: string; nextWeekSlotsLimit?: number; holidays?: HolidayEntry[] }): Promise<void> {
     await request('/settings', {
         method: 'PUT',
         body: JSON.stringify(settings),
     }, true);
+}
+
+/**
+ * Reemplaza la lista completa de dias festivos (requiere autenticacion).
+ */
+export async function saveHolidays(holidays: HolidayEntry[]): Promise<void> {
+    await saveAdminSettings({ holidays });
 }
 
 /**

@@ -46,3 +46,8 @@ export interface User {
     email: string;
     isAdmin: boolean;
 }
+
+export interface HolidayEntry {
+    date: string; // YYYY-MM-DD
+    name: string;
+}
