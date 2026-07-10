@@ -136,6 +136,87 @@ function getCorsHeaders() {
     };
 }
 
+const EQUIPMENT_IDS = [1, 2, 3, 4, 5, 6, 7, 8];
+const TIME_SLOT_IDS = ['08:00', '12:00'];
+
+interface HolidayEntry {
+    date: string;
+    name: string;
+}
+
+async function getHolidays(): Promise<HolidayEntry[]> {
+    try {
+        const result = await sql`SELECT value FROM admin_settings WHERE key = 'holidays'`;
+        if (result.length === 0) {
+            return [];
+        }
+        const parsed = JSON.parse((result[0] as any).value ?? '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        console.error('Error reading holidays:', error);
+        return [];
+    }
+}
+
+function getHolidayDateSpan(): { start: Date; endExclusive: Date } {
+    const currentMonday = getMondayUtc(new Date());
+    const endExclusive = new Date(currentMonday);
+    endExclusive.setUTCDate(endExclusive.getUTCDate() + 14);
+    return { start: currentMonday, endExclusive };
+}
+
+function isDateInHolidaySpan(dateStr: string, start: Date, endExclusive: Date): boolean {
+    const date = parseIsoDateToUtc(dateStr);
+    return date >= start && date < endExclusive;
+}
+
+function injectHolidayBlocks(bookings: ApiBooking[], holidays: HolidayEntry[]): ApiBooking[] {
+    const { start, endExclusive } = getHolidayDateSpan();
+    const activeHolidayDates = Array.from(
+        new Set(
+            holidays
+                .filter((holiday) => isDateInHolidaySpan(holiday.date, start, endExclusive))
+                .map((holiday) => holiday.date)
+        )
+    );
+
+    if (activeHolidayDates.length === 0) {
+        return bookings;
+    }
+
+    const occupiedKeys = new Set(
+        bookings.map((booking) => `${booking.date}-${booking.equipmentId}-${booking.timeSlotId}`)
+    );
+    const synthetics: ApiBooking[] = [];
+
+    for (const date of activeHolidayDates) {
+        for (const equipmentId of EQUIPMENT_IDS) {
+            for (const timeSlotId of TIME_SLOT_IDS) {
+                const slotKey = `${date}-${equipmentId}-${timeSlotId}`;
+                if (occupiedKeys.has(slotKey)) {
+                    continue;
+                }
+                synthetics.push({
+                    id: `holiday-${slotKey}`,
+                    equipmentId,
+                    date,
+                    timeSlotId,
+                    status: 'blocked',
+                    blockType: 'single',
+                    blockedReason: 'Día festivo',
+                    timestamp: 0,
+                });
+            }
+        }
+    }
+
+    return [...bookings, ...synthetics];
+}
+
+function isHolidayDate(date: string, holidays: HolidayEntry[]): boolean {
+    return holidays.some((holiday) => holiday.date === date);
+}
+
 const handler: Handler = async (event, context) => {
     // Respuesta para preflight CORS (peticion OPTIONS)
     if (event.httpMethod === 'OPTIONS') {
@@ -151,11 +232,13 @@ const handler: Handler = async (event, context) => {
             // GET /bookings: listar reservas
             const result = await sql`SELECT * FROM bookings ORDER BY created_at DESC`;
             const bookings = result.map((row) => snakeToCamel(row as any as DbBooking));
+            const holidays = await getHolidays();
+            const bookingsWithHolidayBlocks = injectHolidayBlocks(bookings, holidays);
 
             return {
                 statusCode: 200,
                 headers: getCorsHeaders(),
-                body: JSON.stringify(bookings),
+                body: JSON.stringify(bookingsWithHolidayBlocks),
             };
         }
 
@@ -196,6 +279,17 @@ const handler: Handler = async (event, context) => {
                     statusCode: 400,
                     headers: getCorsHeaders(),
                     body: JSON.stringify({ error: 'Invalid date format. Use YYYY-MM-DD' }),
+                };
+            }
+
+            // Early holiday rejection: after cheap field/format validations,
+            // before auth and business logic.
+            const holidays = await getHolidays();
+            if (isHolidayDate(booking.date, holidays)) {
+                return {
+                    statusCode: 400,
+                    headers: getCorsHeaders(),
+                    body: JSON.stringify({ error: 'No se pueden hacer reservas en días festivos.' }),
                 };
             }
 
