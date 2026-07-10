@@ -5,6 +5,7 @@ import * as api from '../services/api';
 import { Pencil, X, Calendar as CalendarIcon, Lock, Trash2, Copy, Check, Download, Plus } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import AdminBookingModal from './AdminBookingModal';
+import HolidayManager from './HolidayManager';
 
 interface AdminPanelProps {
     bookings: Booking[];
@@ -794,6 +795,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ bookings, refreshData, onLogout
                             </button>
                         </div>
                     </div>
+
+                    {/* Gestión de días festivos */}
+                    <HolidayManager />
 
                     {/* Notificaciones (actualmente desactivadas) */}
                     {/* <div className="bg-slate-50 p-5 rounded-lg border border-slate-200">
